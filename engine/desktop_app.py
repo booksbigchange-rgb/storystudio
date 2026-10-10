@@ -11,6 +11,7 @@ import threading
 import uuid
 from pathlib import Path
 from timeline import scene_at, scene_ranges, total_duration
+from camera import DEFAULT as CAMERA_DEFAULT, camera_values, zoompan_filter
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -61,9 +62,8 @@ def render_scenes(scenes, output, progress=None):
             vf = (
                 f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
                 f"crop={WIDTH}:{HEIGHT},"
-                f"zoompan=z='min(zoom+0.0006,1.08)':"
-                f"d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS},"
-                "format=yuv420p"
+                + zoompan_filter(scene, frames, WIDTH, HEIGHT, FPS)
+                + ",format=yuv420p"
             )
             cmd = [
                 binary, "-hide_banner", "-loglevel", "error", "-y",
@@ -99,12 +99,13 @@ class StoryStudioApp:
     def __init__(self, root):
         self.root = root
         self.root.title("StoryStudio — Desktop MVP")
-        self.root.geometry("1060x760")
+        self.root.geometry("1280x780")
         self._preview_image = None
         self.scenes = []
         self.project_path = PROJECTS / "desktop-mvp" / "story.json"
         self.status = tk.StringVar(value="Add illustrated scenes to begin.")
         self.duration = tk.StringVar(value="5")
+        self.camera_inputs = {key: tk.StringVar(value=str(value)) for key, value in CAMERA_DEFAULT.items()}
         self.build()
         if self.project_path.exists():
             try:
@@ -128,6 +129,13 @@ class StoryStudioApp:
         ttk.Label(toolbar, text="Seconds:").pack(side="left", padx=(16, 4))
         ttk.Entry(toolbar, textvariable=self.duration, width=6).pack(side="left")
         ttk.Button(toolbar, text="Apply duration", command=self.apply_duration).pack(side="left", padx=4)
+        camera_row = ttk.Frame(frame)
+        camera_row.pack(fill="x", pady=(6, 2))
+        ttk.Label(camera_row, text="CAMERA KEYFRAMES").pack(side="left", padx=(0, 8))
+        for key in CAMERA_DEFAULT:
+            ttk.Label(camera_row, text=key.replace("_", " ")).pack(side="left", padx=(6, 2))
+            ttk.Entry(camera_row, textvariable=self.camera_inputs[key], width=5).pack(side="left")
+        ttk.Button(camera_row, text="Apply camera", command=self.apply_camera).pack(side="left", padx=8)
         workspace = ttk.Panedwindow(frame, orient="horizontal")
         workspace.pack(fill="both", expand=True, pady=12)
         scenes_panel = ttk.Frame(workspace)
@@ -203,6 +211,8 @@ class StoryStudioApp:
         index = self.selected()
         if index is not None:
             self.duration.set(str(self.scenes[index]["duration"]))
+            for key, value in camera_values(self.scenes[index]).items():
+                self.camera_inputs[key].set(str(value))
         self.draw_timeline()
         self.draw_preview()
 
@@ -269,6 +279,20 @@ class StoryStudioApp:
             self.items.see(index)
             self.on_select()
 
+    def apply_camera(self):
+        index = self.selected()
+        if index is None:
+            self.status.set("Select a scene before applying camera keyframes.")
+            return
+        try:
+            values = camera_values({key: field.get() for key, field in self.camera_inputs.items()})
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("Invalid camera keyframes", str(exc))
+            return
+        self.scenes[index].update(values)
+        self.status.set(f"Camera keyframes updated for scene {index + 1}.")
+        self.draw_timeline()
+
     def apply_duration(self):
         index = self.selected()
         if index is None:
@@ -300,7 +324,7 @@ class StoryStudioApp:
             duration = float(scene["duration"])
             if not isinstance(image, str) or not math.isfinite(duration) or not 0.5 <= duration <= 120:
                 raise ValueError("Invalid scene data")
-            scenes.append({"image": image, "duration": duration})
+            scenes.append({"image": image, "duration": duration, **camera_values(scene)})
         self.scenes = scenes
         self.project_path = Path(path)
         self.refresh()
