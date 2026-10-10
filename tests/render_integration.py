@@ -35,7 +35,10 @@ def main():
         output = root / "story.mp4"
         desktop_app.render_scenes(
             [
-                {"image": str(first), "duration": 0.5},
+                {"image": str(first), "duration": 0.5,
+                 "zoom_start": 1.0, "zoom_end": 1.3,
+                 "x_start": 0.0, "x_end": 1.0,
+                 "y_start": 0.0, "y_end": 1.0},
                 {"image": str(second), "duration": 0.5},
             ],
             output,
