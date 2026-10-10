@@ -3,6 +3,7 @@
 Run with the D: Python runtime. No cloud services or extra UI dependencies.
 """
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -51,7 +52,7 @@ def render_scenes(scenes, output, progress=None):
             if not image.is_file():
                 raise FileNotFoundError(str(image))
             duration = float(scene["duration"])
-            if not 0.5 <= duration <= 120:
+            if not math.isfinite(duration) or not 0.5 <= duration <= 120:
                 raise ValueError("Scene duration must be between 0.5 and 120 seconds")
             frames = round(duration * FPS)
             segment = job / f"scene_{index:04d}.mp4"
@@ -274,7 +275,7 @@ class StoryStudioApp:
             return
         try:
             seconds = float(self.duration.get())
-            if not 0.5 <= seconds <= 120:
+            if not math.isfinite(seconds) or not 0.5 <= seconds <= 120:
                 raise ValueError()
         except ValueError:
             messagebox.showerror("Invalid duration", "Use 0.5 to 120 seconds.")
@@ -297,7 +298,7 @@ class StoryStudioApp:
         for scene in data["scenes"]:
             image = scene["image"]
             duration = float(scene["duration"])
-            if not isinstance(image, str) or not 0.5 <= duration <= 120:
+            if not isinstance(image, str) or not math.isfinite(duration) or not 0.5 <= duration <= 120:
                 raise ValueError("Invalid scene data")
             scenes.append({"image": image, "duration": duration})
         self.scenes = scenes
