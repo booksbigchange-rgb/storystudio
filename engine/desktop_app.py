@@ -9,8 +9,12 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+except ImportError:
+    tk = None
+    filedialog = messagebox = ttk = None
 
 ROOT = Path(os.environ.get("STORY_STUDIO", Path(__file__).resolve().parents[1])).expanduser().resolve()
 PROJECTS = ROOT / "projects"
@@ -255,6 +259,8 @@ class StoryStudioApp:
 
 
 def main():
+    if tk is None:
+        raise RuntimeError("Tkinter is required to launch the desktop GUI; headless rendering remains available")
     for path in (PROJECTS, EXPORTS, TEMP):
         path.mkdir(parents=True, exist_ok=True)
     root = tk.Tk()
