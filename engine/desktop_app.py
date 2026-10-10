@@ -30,11 +30,11 @@ def ffmpeg_binary():
 
 def render_scenes(scenes, output, progress=None):
     """Render still-image scenes into a vertical H.264 MP4, with no shell calls."""
+    if not scenes:
+        raise ValueError("Add at least one scene before rendering")
     binary = ffmpeg_binary()
     if not binary:
         raise RuntimeError("FFmpeg not found in tools/ffmpeg or PATH")
-    if not scenes:
-        raise ValueError("Add at least one scene before rendering")
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     job = TEMP / ("render-" + uuid.uuid4().hex)
