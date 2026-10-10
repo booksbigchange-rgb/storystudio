@@ -1,0 +1,34 @@
+# Temporary files
+cache/
+temp/
+logs/
+exports/
+
+# Large AI models
+models/
+
+# Local user projects
+projects/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.json
+
+# System files
+Thumbs.db
+.DS_Store
+
+# Locally installed applications
+tools/
+
+tools/
