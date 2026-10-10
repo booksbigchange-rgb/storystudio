@@ -3,6 +3,7 @@
 Run with the D: Python runtime. No cloud services or extra UI dependencies.
 """
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -11,7 +12,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("STORY_STUDIO", Path(__file__).resolve().parents[1])).expanduser().resolve()
 PROJECTS = ROOT / "projects"
 EXPORTS = ROOT / "exports"
 TEMP = ROOT / "temp"
@@ -21,6 +22,9 @@ WIDTH, HEIGHT = 1080, 1920
 
 
 def ffmpeg_binary():
+    configured = os.environ.get("STORY_STUDIO_FFMPEG")
+    if configured:
+        return configured if Path(configured).is_file() else None
     return str(FFMPEG) if FFMPEG.is_file() else shutil.which("ffmpeg")
 
 
