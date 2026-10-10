@@ -16,7 +16,7 @@ import desktop_app
 def make_ppm(path, rgb):
     width, height = 24, 24
     path.write_bytes(
-        f"P6\\n{width} {height}\\n255\\n".encode("ascii")
+        f"P6\n{width} {height}\n255\n".encode("ascii")
         + bytes(rgb) * (width * height)
     )
 
