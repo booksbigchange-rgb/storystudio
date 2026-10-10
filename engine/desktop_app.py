@@ -9,6 +9,7 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
+from timeline import scene_at, scene_ranges, total_duration
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -97,7 +98,8 @@ class StoryStudioApp:
     def __init__(self, root):
         self.root = root
         self.root.title("StoryStudio — Desktop MVP")
-        self.root.geometry("850x580")
+        self.root.geometry("1060x760")
+        self._preview_image = None
         self.scenes = []
         self.project_path = PROJECTS / "desktop-mvp" / "story.json"
         self.status = tk.StringVar(value="Add illustrated scenes to begin.")
@@ -125,9 +127,27 @@ class StoryStudioApp:
         ttk.Label(toolbar, text="Seconds:").pack(side="left", padx=(16, 4))
         ttk.Entry(toolbar, textvariable=self.duration, width=6).pack(side="left")
         ttk.Button(toolbar, text="Apply duration", command=self.apply_duration).pack(side="left", padx=4)
-        self.items = tk.Listbox(frame, font=("Segoe UI", 11), height=13)
-        self.items.pack(fill="both", expand=True, pady=12)
+        workspace = ttk.Panedwindow(frame, orient="horizontal")
+        workspace.pack(fill="both", expand=True, pady=12)
+        scenes_panel = ttk.Frame(workspace)
+        workspace.add(scenes_panel, weight=2)
+        preview_panel = ttk.Frame(workspace)
+        workspace.add(preview_panel, weight=3)
+        ttk.Label(scenes_panel, text="SCENES").pack(anchor="w")
+        self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=13, exportselection=False)
+        self.items.pack(fill="both", expand=True)
         self.items.bind("<<ListboxSelect>>", self.on_select)
+        ttk.Label(preview_panel, text="SCENE PREVIEW (still image)").pack(anchor="w")
+        self.preview = tk.Canvas(preview_panel, width=300, height=420, bg="#20232b", highlightthickness=0)
+        self.preview.pack(fill="both", expand=True)
+        self.preview.bind("<Configure>", lambda _event: self.draw_preview())
+        ttk.Label(frame, text="TIMELINE — click a scene to select it").pack(anchor="w")
+        self.timeline = tk.Canvas(frame, height=76, bg="#20232b", highlightthickness=0)
+        self.timeline.pack(fill="x", pady=(4, 12))
+        self.timeline.bind("<Configure>", lambda _event: self.draw_timeline())
+        self.timeline.bind("<Button-1>", self.click_timeline)
+        self.timeline_info = ttk.Label(frame, text="Total: 0.0s")
+        self.timeline_info.pack(anchor="w")
         actions = ttk.Frame(frame)
         actions.pack(fill="x")
         ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
@@ -147,6 +167,8 @@ class StoryStudioApp:
             self.items.insert("end", f"{n:02d}   {Path(scene['image']).name}   —   {scene['duration']:g} seconds")
         if index is not None and 0 <= index < len(self.scenes):
             self.items.selection_set(index)
+        self.draw_timeline()
+        self.draw_preview()
 
     def selected(self):
         selection = self.items.curselection()
@@ -180,6 +202,71 @@ class StoryStudioApp:
         index = self.selected()
         if index is not None:
             self.duration.set(str(self.scenes[index]["duration"]))
+        self.draw_timeline()
+        self.draw_preview()
+
+    def draw_preview(self):
+        self.preview.delete("all")
+        self._preview_image = None
+        w, h = max(self.preview.winfo_width(), 100), max(self.preview.winfo_height(), 100)
+        index = self.selected()
+        if index is None:
+            self.preview.create_text(w // 2, h // 2, text="Select a scene to preview", fill="white")
+            return
+        path = Path(self.scenes[index]["image"])
+        if not path.is_file():
+            self.preview.create_text(w // 2, h // 2, text="Image not found", fill="#ffb3b3")
+            return
+        try:
+            # Pillow supports JPEG, PNG, and BMP with aspect-preserving scaling.
+            from PIL import Image, ImageTk
+            with Image.open(path) as image:
+                image.thumbnail((max(w - 16, 1), max(h - 16, 1)))
+                self._preview_image = ImageTk.PhotoImage(image.copy())
+        except ImportError:
+            try:
+                self._preview_image = tk.PhotoImage(file=str(path))
+                factor = max(1, (self._preview_image.width() + w - 1) // w,
+                             (self._preview_image.height() + h - 1) // h)
+                self._preview_image = self._preview_image.subsample(factor)
+            except tk.TclError:
+                self.preview.create_text(w // 2, h // 2,
+                    text="Install Pillow to preview this format", fill="white")
+                return
+        except (OSError, ValueError, tk.TclError) as exc:
+            self.preview.create_text(w // 2, h // 2, text=f"Preview unavailable: {exc}", fill="white", width=w - 20)
+            return
+        self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+
+    def draw_timeline(self):
+        self.timeline.delete("all")
+        total = total_duration(self.scenes)
+        self.timeline_info.configure(text=f"Total: {total:.1f}s  •  {len(self.scenes)} scenes")
+        if not self.scenes:
+            self.timeline.create_text(12, 38, anchor="w", text="Add images to build your timeline", fill="white")
+            return
+        width = max(self.timeline.winfo_width() - 16, 1)
+        selected = self.selected()
+        for i, (start, end) in enumerate(scene_ranges(self.scenes)):
+            x1 = 8 + start / total * width
+            x2 = 8 + end / total * width
+            fill = "#57a4e9" if i == selected else "#53617b"
+            self.timeline.create_rectangle(x1, 12, x2, 64, fill=fill, outline="#20232b", width=2)
+            if x2 - x1 > 45:
+                self.timeline.create_text((x1 + x2) / 2, 30, text=f"Scene {i + 1}", fill="white")
+                self.timeline.create_text((x1 + x2) / 2, 48, text=f"{end - start:g}s", fill="white")
+
+    def click_timeline(self, event):
+        if not self.scenes:
+            return
+        width = max(self.timeline.winfo_width() - 16, 1)
+        position = min(max((event.x - 8) / width, 0), 1) * total_duration(self.scenes)
+        index = scene_at(self.scenes, position)
+        if index is not None:
+            self.items.selection_clear(0, "end")
+            self.items.selection_set(index)
+            self.items.see(index)
+            self.on_select()
 
     def apply_duration(self):
         index = self.selected()
