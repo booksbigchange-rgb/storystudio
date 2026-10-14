@@ -1,0 +1,86 @@
+name: StoryStudio Windows portable prototype
+on:
+  push:
+    branches: [feature/story-studio-portable-windows]
+    paths:
+      - 'integrations/lemo-lite/**'
+      - '.github/workflows/story-studio-windows-portable.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install free build tools
+        run: |
+          python -m pip install playwright==1.55.0 pyinstaller==6.16.0
+      - name: Syntax checks
+        run: |
+          python -m py_compile integrations/lemo-lite/renderer.py integrations/lemo-lite/portable_app.py
+          node --check integrations/lemo-lite/scene/scene.js
+          node --check integrations/lemo-lite/vendor/lemo-lib.js
+      - name: Download official FFmpeg Windows essentials archive
+        run: |
+          $ErrorActionPreference='Stop'
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-unpacked"
+          $ff = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffmpeg.exe | Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
+          $fp = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffprobe.exe | Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
+          if (-not $ff -or -not $fp) { throw "FFmpeg binaries missing from official archive" }
+          $ff.FullName | Set-Content "$env:RUNNER_TEMP\ffmpeg-path.txt"
+          $fp.FullName | Set-Content "$env:RUNNER_TEMP\ffprobe-path.txt"
+          & $ff.FullName -version | Select-Object -First 1
+      - name: Validate native Windows rendering
+        run: |
+          $env:STORYSTUDIO_FFMPEG = Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw
+          $env:STORYSTUDIO_FFMPEG = $env:STORYSTUDIO_FFMPEG.Trim()
+          $edge = @(
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+            "$( [Environment]::GetFolderPath('ProgramFilesX86') )\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($edge) { $env:STORYSTUDIO_CHROME = $edge }
+          python integrations/lemo-lite/renderer.py --duration 2 --width 640 --height 360 --fps 12 --output exports/windows-native-smoke.mp4
+      - name: Build Python-free GUI executable
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name StoryStudio --collect-all playwright --distpath dist --workpath build\pyinstaller --specpath build\spec --add-data "integrations/lemo-lite/scene;scene" --add-data "integrations/lemo-lite/vendor;vendor" integrations/lemo-lite/portable_app.py
+          if (-not (Test-Path "dist\StoryStudio\StoryStudio.exe")) { throw "Portable EXE missing" }
+          New-Item -Force -ItemType Directory "dist\StoryStudio\bin" | Out-Null
+          New-Item -Force -ItemType Directory "dist\StoryStudio\licenses" | Out-Null
+          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim()) "dist\StoryStudio\bin\ffmpeg.exe"
+          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffprobe-path.txt" -Raw).Trim()) "dist\StoryStudio\bin\ffprobe.exe"
+          Copy-Item "integrations\lemo-lite\PORTABLE-README.md" "dist\StoryStudio\README.md"
+          Copy-Item "integrations\lemo-lite\LICENSE-LEMO.md" "dist\StoryStudio\licenses\LICENSE-LEMO.md"
+          $ffdir = Split-Path -Parent ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim())
+          $releaseRoot = Split-Path -Parent $ffdir
+          Get-ChildItem $releaseRoot -Recurse -File -Include "LICENSE*","COPYING*" | Select-Object -First 8 | ForEach-Object {
+            Copy-Item $_.FullName ("dist\StoryStudio\licenses\" + $_.Name) -Force
+          }
+      - name: Test compiled portable EXE end-to-end
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = (Resolve-Path "dist\StoryStudio\StoryStudio.exe").Path
+          $out = "$env:RUNNER_TEMP\portable-exe-smoke.mp4"
+          $proc = Start-Process -FilePath $app -ArgumentList @('--self-test','--output',('"' + $out + '"'),'--duration','2','--fps','12','--width','640','--height','360') -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            if (Test-Path "dist\StoryStudio\logs\portable-self-test.log") { Get-Content "dist\StoryStudio\logs\portable-self-test.log" }
+            throw "StoryStudio.exe failed smoke test (exit $($proc.ExitCode))"
+          }
+          if (-not (Test-Path $out)) { throw "Compiled StoryStudio.exe did not export MP4" }
+          & "dist\StoryStudio\bin\ffprobe.exe" -v error -show_entries format=duration -of default=noprint_wrappers=1 $out
+          Copy-Item $out "dist\StoryStudio\portable-exe-smoke.mp4"
+      - name: Upload Windows portable beta
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-studio-windows-portable
+          path: dist/StoryStudio/
+          retention-days: 7
