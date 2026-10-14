@@ -106,6 +106,8 @@ class StoryStudioApp:
         self.root.title("StoryStudio — Desktop MVP")
         self.root.geometry("1280x780")
         self._preview_image = None
+        self._stage_rect = None
+        self.preview_end = False
         self.scenes = []
         self.project_path = PROJECTS / "desktop-mvp" / "story.json"
         self.status = tk.StringVar(value="Add illustrated scenes to begin.")
@@ -151,10 +153,27 @@ class StoryStudioApp:
         self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=13, exportselection=False)
         self.items.pack(fill="both", expand=True)
         self.items.bind("<<ListboxSelect>>", self.on_select)
-        ttk.Label(preview_panel, text="SCENE PREVIEW (still image)").pack(anchor="w")
+        ttk.Label(scenes_panel, text="CHARACTER / PROP LAYERS").pack(anchor="w", pady=(10, 2))
+        self.layer_items = tk.Listbox(scenes_panel, font=("Segoe UI", 10), height=5,
+                                      exportselection=False)
+        self.layer_items.pack(fill="x")
+        self.layer_items.bind("<<ListboxSelect>>", lambda _event: self.draw_preview())
+        layer_actions = ttk.Frame(scenes_panel)
+        layer_actions.pack(fill="x", pady=3)
+        ttk.Button(layer_actions, text="Add PNG", command=self.add_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Remove", command=self.remove_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Animate right", command=self.animate_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Clear motion", command=self.clear_motion).pack(side="left", padx=2)
+        ttk.Label(preview_panel, text="SCENE PREVIEW — drag selected character to position it").pack(anchor="w")
+        preview_actions = ttk.Frame(preview_panel)
+        preview_actions.pack(fill="x")
+        ttk.Button(preview_actions, text="Start frame", command=lambda: self.show_pose(False)).pack(side="left", padx=2)
+        ttk.Button(preview_actions, text="End frame", command=lambda: self.show_pose(True)).pack(side="left", padx=2)
         self.preview = tk.Canvas(preview_panel, width=300, height=420, bg="#20232b", highlightthickness=0)
         self.preview.pack(fill="both", expand=True)
         self.preview.bind("<Configure>", lambda _event: self.draw_preview())
+        self.preview.bind("<Button-1>", self.drag_selected_layer)
+        self.preview.bind("<B1-Motion>", self.drag_selected_layer)
         ttk.Label(frame, text="TIMELINE — click a scene to select it").pack(anchor="w")
         self.timeline = tk.Canvas(frame, height=76, bg="#20232b", highlightthickness=0)
         self.timeline.pack(fill="x", pady=(4, 12))
@@ -181,6 +200,7 @@ class StoryStudioApp:
             self.items.insert("end", f"{n:02d}   {Path(scene['image']).name}   —   {scene['duration']:g} seconds")
         if index is not None and 0 <= index < len(self.scenes):
             self.items.selection_set(index)
+        self.refresh_layers()
         self.draw_timeline()
         self.draw_preview()
 
@@ -218,12 +238,15 @@ class StoryStudioApp:
             self.duration.set(str(self.scenes[index]["duration"]))
             for key, value in camera_values(self.scenes[index]).items():
                 self.camera_inputs[key].set(str(value))
+        self.preview_end = False
+        self.refresh_layers()
         self.draw_timeline()
         self.draw_preview()
 
     def draw_preview(self):
         self.preview.delete("all")
         self._preview_image = None
+        self._stage_rect = None
         w, h = max(self.preview.winfo_width(), 100), max(self.preview.winfo_height(), 100)
         index = self.selected()
         if index is None:
@@ -232,6 +255,26 @@ class StoryStudioApp:
         path = Path(self.scenes[index]["image"])
         if not path.is_file():
             self.preview.create_text(w // 2, h // 2, text="Image not found", fill="#ffb3b3")
+            return
+        if self.scenes[index].get("layers"):
+            try:
+                from PIL import ImageTk
+                from layer_render import render_scene_frame
+                # Render at preview resolution to avoid heavy local CPU/GPU work.
+                scale = min((w - 20) / WIDTH, (h - 20) / HEIGHT)
+                pw, ph = max(1, round(WIDTH * scale)), max(1, round(HEIGHT * scale))
+                current = self.scenes[index]
+                at = current["duration"] if self.preview_end else 0
+                preview_frame = render_scene_frame(current, at, pw, ph)
+                self._preview_image = ImageTk.PhotoImage(preview_frame)
+                left, top = (w - pw) // 2, (h - ph) // 2
+                self._stage_rect = (left, top, pw, ph)
+                self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+                self.preview.create_text(10, 10, anchor="nw",
+                    text="END" if self.preview_end else "START", fill="#ffffff")
+            except (OSError, ValueError, RuntimeError, tk.TclError) as exc:
+                self.preview.create_text(w // 2, h // 2, fill="#ffb3b3",
+                    text=f"Layer preview unavailable: {exc}", width=w - 20)
             return
         try:
             # Pillow supports JPEG, PNG, and BMP with aspect-preserving scaling.
@@ -253,6 +296,107 @@ class StoryStudioApp:
             self.preview.create_text(w // 2, h // 2, text=f"Preview unavailable: {exc}", fill="white", width=w - 20)
             return
         self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+
+
+    def selected_layer(self):
+        selected = self.layer_items.curselection()
+        return selected[0] if selected else None
+
+    def refresh_layers(self, index=None):
+        self.layer_items.delete(0, "end")
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        layers = self.scenes[scene_index].get("layers", [])
+        for layer in layers:
+            motion = "  • animated" if layer.get("keyframes") else ""
+            self.layer_items.insert("end", f"{layer.get('name', 'Character')}{motion}")
+        if layers:
+            position = min(index if index is not None else 0, len(layers) - 1)
+            self.layer_items.selection_set(position)
+
+    def add_layer(self):
+        scene_index = self.selected()
+        if scene_index is None:
+            messagebox.showwarning("Choose a scene", "Select a scene before adding a character.")
+            return
+        path = filedialog.askopenfilename(title="Choose a character or prop with transparency",
+                                          filetypes=[("PNG artwork", "*.png")])
+        if not path:
+            return
+        layer = {"id": uuid.uuid4().hex, "name": Path(path).stem, "image": str(Path(path).resolve()),
+                 "x": 0.3, "y": 0.55, "width": 0.32, "scale": 1.0,
+                 "rotation": 0.0, "opacity": 1.0, "keyframes": []}
+        layers = self.scenes[scene_index].setdefault("layers", [])
+        if len(layers) >= 32:
+            messagebox.showerror("Layer limit", "A scene supports up to 32 layers.")
+            return
+        layers.append(layer)
+        self.preview_end = False
+        self.refresh_layers(len(layers) - 1)
+        self.draw_preview()
+        self.status.set("Character added. Drag the selected layer inside the preview to position it.")
+
+    def remove_layer(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            return
+        self.scenes[scene_index]["layers"].pop(layer_index)
+        self.refresh_layers()
+        self.draw_preview()
+
+    def animate_layer(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            self.status.set("Select a character layer to animate.")
+            return
+        scene = self.scenes[scene_index]
+        layer = scene["layers"][layer_index]
+        x, y = float(layer.get("x", 0.5)), float(layer.get("y", 0.5))
+        layer["keyframes"] = [
+            {"time": 0.0, "x": x, "y": y},
+            {"time": float(scene["duration"]), "x": min(x + 0.35, 2.0),
+             "y": y, "ease": "smooth"},
+        ]
+        self.refresh_layers(layer_index)
+        self.preview_end = True
+        self.draw_preview()
+        self.status.set("Motion created. Compare Start frame and End frame, then export MP4.")
+
+    def clear_motion(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            return
+        self.scenes[scene_index]["layers"][layer_index]["keyframes"] = []
+        self.preview_end = False
+        self.refresh_layers(layer_index)
+        self.draw_preview()
+
+    def show_pose(self, end):
+        self.preview_end = bool(end)
+        self.draw_preview()
+
+    def drag_selected_layer(self, event):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None or self._stage_rect is None:
+            return
+        left, top, width, height = self._stage_rect
+        if not (left <= event.x <= left + width and top <= event.y <= top + height):
+            return
+        # The layer is translated together with its keyframes. That preserves
+        # existing motion rather than silently discarding the animation.
+        layer = self.scenes[scene_index]["layers"][layer_index]
+        x = (event.x - left) / width
+        y = (event.y - top) / height
+        old_x, old_y = float(layer.get("x", 0.5)), float(layer.get("y", 0.5))
+        dx, dy = x - old_x, y - old_y
+        layer["x"], layer["y"] = x, y
+        for key in layer.get("keyframes", []):
+            if "x" in key:
+                key["x"] = max(-1.0, min(2.0, key["x"] + dx))
+            if "y" in key:
+                key["y"] = max(-1.0, min(2.0, key["y"] + dy))
+        self.draw_preview()
 
     def draw_timeline(self):
         self.timeline.delete("all")
