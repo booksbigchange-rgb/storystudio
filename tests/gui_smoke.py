@@ -23,7 +23,21 @@ def main():
         root = desktop_app.tk.Tk()
         try:
             app = desktop_app.StoryStudioApp(root)
+            root.geometry("1000x690")
             root.update_idletasks()
+            root.update()
+            window_bottom = root.winfo_rooty() + root.winfo_height()
+            assert app.render_button.winfo_ismapped(), "Export button was hidden"
+            assert (app.render_button.winfo_rooty() + app.render_button.winfo_height()
+                    <= window_bottom), "Export button is below the window"
+            assert app.motion_timeline.winfo_ismapped(), "Keyframe timeline was hidden"
+            root.geometry("1366x768")
+            root.update_idletasks()
+            root.update()
+            window_bottom = root.winfo_rooty() + root.winfo_height()
+            assert app.render_button.winfo_ismapped(), "Export hidden after resizing"
+            assert (app.render_button.winfo_rooty() + app.render_button.winfo_height()
+                    <= window_bottom), "Export below resized window"
             app.scenes = [{"image": str(bg), "duration": 2.0, "layers": [{
                 "id": "character", "name": "Character", "image": str(png),
                 "x": 0.25, "y": 0.55, "width": 0.3, "keyframes": []}]}]
