@@ -23,6 +23,12 @@ EXPORT_DIR = APP_DIR / 'exports'
 def ensure_folders():
     for folder in (LOG_DIR, EXPORT_DIR, APP_DIR / 'temp'):
         folder.mkdir(exist_ok=True, parents=True)
+    # Scope Playwright's disposable browser profile and temp files to this
+    # portable folder rather than filling the user's system drive.
+    if renderer.FROZEN:
+        os.environ['TEMP'] = str(APP_DIR / 'temp')
+        os.environ['TMP'] = str(APP_DIR / 'temp')
+        os.environ['TMPDIR'] = str(APP_DIR / 'temp')
 
 def diagnostics():
     problems = []
@@ -130,7 +136,6 @@ def start_gui():
             foot = tk.Frame(self, bg=DARK)
             foot.pack(fill='x', padx=36, pady=(20, 28))
             self.label(foot, 'RENDER STATUS', 9, MUTED, True).pack(anchor='w')
-            self.label(foot, '', 10, WHITE).destroy()  # Intentional spacing-free status row
             self.status_view = self.label(foot, '', 11, WHITE, wraplength=760)
             self.status_view.pack(anchor='w', pady=(5, 13))
             self.status.trace_add('write', lambda *_: self.status_view.config(text=self.status.get()))
@@ -170,7 +175,7 @@ def start_gui():
                 messagebox.showerror('Missing tools','\n'.join(issues))
                 return
             high = self.option.get().startswith('720p')
-            width, height, fps, duration = (1280,720,24,10) if high else (640,360,12,2)
+            width, height, fps, duration = (1280,720,24,10) if high else (640,360,12,10)
             suggest = 'pip-and-the-star-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '.mp4'
             target = filedialog.asksaveasfilename(
                 title='Export your StoryStudio video',
