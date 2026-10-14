@@ -32,6 +32,15 @@ def run(output):
                     assert widget.winfo_ismapped(),str(widget)
                     assert widget.winfo_rooty()+widget.winfo_height()<=app.winfo_rooty()+app.winfo_height(),str(widget)
                     assert widget.winfo_rootx()+widget.winfo_width()<=app.winfo_rootx()+app.winfo_width(),str(widget)
+                # Laptop-safe Character tab: controls must not be clipped by
+                # the fixed footer or inspector even at minimum window size.
+                app.tabs.select(1);app.update()
+                for widget in (app.set_key_button,app.remove_key_button):
+                    assert widget.winfo_ismapped(), 'Pose button hidden: '+str(widget)
+                    assert widget.winfo_rooty()+widget.winfo_height()<=app.winfo_rooty()+app.winfo_height()-25, 'Pose button clipped'
+                if (width,height)==(1000,680):
+                    ImageGrab.grab(bbox=(app.winfo_rootx(),app.winfo_rooty(),app.winfo_rootx()+app.winfo_width(),app.winfo_rooty()+app.winfo_height())).save(output/'editor-character-keyframes.png')
+                app.tabs.select(0);app.update()
             app.add_button.invoke();assert len(app.document['scenes'])==2
             app.duplicate_button.invoke();assert len(app.document['scenes'])==3
             app.delete_button.invoke();assert len(app.document['scenes'])==2
