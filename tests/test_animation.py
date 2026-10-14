@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine"))
-from animation import validated_layers, layer_state, retime_layers
+from animation import validated_layers, layer_state, retime_layers, upsert_keyframe, move_keyframe, delete_keyframe
 
 
 class AnimationTests(unittest.TestCase):
@@ -63,6 +63,36 @@ class AnimationTests(unittest.TestCase):
         layer = retime_layers([self.layer], 2, 4)[0]
         self.assertEqual(layer["keyframes"][-1]["time"], 4)
         self.assertAlmostEqual(layer_state(layer, 2)["x"], 0.5)
+
+
+    def test_edit_poses_and_move_marker(self):
+        original = validated_layers([self.layer], 2)[0]
+        changed = upsert_keyframe(original, 2, 1, {"x": 0.7, "rotation": 20}, ease="smooth")
+        self.assertAlmostEqual(layer_state(changed, 1)["x"], 0.7)
+        self.assertEqual(layer_state(changed, 1)["rotation"], 20)
+        self.assertEqual(len(changed["keyframes"]), 3)
+        moved = move_keyframe(changed, 2, 1, 1.5)
+        self.assertEqual(moved["keyframes"][1]["time"], 1.5)
+        self.assertAlmostEqual(layer_state(moved, 1.5)["x"], 0.7)
+        deleted = delete_keyframe(moved, 2, 1)
+        self.assertEqual(len(deleted["keyframes"]), 2)
+        self.assertEqual(len(original["keyframes"]), 2)
+
+    def test_upsert_at_zero_changes_base_pose(self):
+        layer = validated_layers([self.layer], 2)[0]
+        new = upsert_keyframe(layer, 2, 0, {"x": 0.4})
+        self.assertEqual(layer_state(new, 0)["x"], 0.4)
+        self.assertEqual(layer_state(layer, 0)["x"], 0.2)
+
+    def test_keyframe_errors_do_not_change_source(self):
+        original = validated_layers([self.layer], 2)[0]
+        with self.assertRaises(ValueError):
+            upsert_keyframe(original, 2, 1.5, {"opacity": 2})
+        with self.assertRaises(ValueError):
+            move_keyframe(original, 2, 0, 2)
+        with self.assertRaises(ValueError):
+            upsert_keyframe(original, 2, 1.5, {"invalid_property": 2})
+        self.assertEqual(len(original["keyframes"]), 2)
 
     def test_does_not_mutate_project(self):
         source = dict(self.layer)

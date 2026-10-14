@@ -84,6 +84,66 @@ def retime_layers(layers, old_duration, new_duration):
     return validated_layers(result, new_duration)
 
 
+
+def upsert_keyframe(raw_layer, duration, seconds, values, ease="smooth"):
+    """Add/edit character pose at a time without deleting other animation keys."""
+    layer = validated_layers([raw_layer], duration)[0]
+    moment = _number(seconds, "time", 0.0, duration)
+    if ease not in EASINGS:
+        raise ValueError("Unsupported easing")
+    if not isinstance(values, dict) or not values:
+        raise ValueError("Provide animation properties")
+    updated = {}
+    for key, value in values.items():
+        if key not in ANIMATABLE:
+            raise ValueError(f"Unknown animation property: {key}")
+        updated[key] = _number(value, key, *BOUNDS[key])
+    if moment == 0.0:
+        layer.update(updated)
+        for frame in layer["keyframes"]:
+            if frame["time"] == 0:
+                frame.update(updated)
+                frame["ease"] = ease
+                break
+        return layer
+    state = layer_state(layer, moment)
+    state.update(updated)
+    frame = {"time": moment, "ease": ease,
+             **{property_name: state[property_name] for property_name in ANIMATABLE}}
+    for index, prior in enumerate(layer["keyframes"]):
+        if abs(prior["time"] - moment) < 0.0005:
+            frame["time"] = prior["time"]
+            layer["keyframes"][index] = frame
+            break
+    else:
+        layer["keyframes"].append(frame)
+        layer["keyframes"].sort(key=lambda item: item["time"])
+    return validated_layers([layer], duration)[0]
+
+
+def move_keyframe(raw_layer, duration, index, seconds):
+    """Move an individual marker in time while preserving order and poses."""
+    layer = validated_layers([raw_layer], duration)[0]
+    if not isinstance(index, int) or not 0 <= index < len(layer["keyframes"]):
+        raise IndexError("No selected keyframe")
+    moment = _number(seconds, "time", 0, duration)
+    previous = (layer["keyframes"][index - 1]["time"] + 0.01
+                if index else 0.01)
+    following = (layer["keyframes"][index + 1]["time"] - 0.01
+                 if index + 1 < len(layer["keyframes"]) else duration)
+    if moment < previous or moment > following:
+        raise ValueError("Cannot move keyframe past another marker")
+    layer["keyframes"][index]["time"] = moment
+    return validated_layers([layer], duration)[0]
+
+
+def delete_keyframe(raw_layer, duration, index):
+    layer = validated_layers([raw_layer], duration)[0]
+    if not isinstance(index, int) or not 0 <= index < len(layer["keyframes"]):
+        raise IndexError("No selected keyframe")
+    layer["keyframes"].pop(index)
+    return layer
+
 def layer_state(layer, seconds):
     """Interpolate a validated layer at an animation time in seconds."""
     if not math.isfinite(float(seconds)):
