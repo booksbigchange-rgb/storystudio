@@ -170,8 +170,29 @@ class StoryStudioApp:
                 self.status.set(f"Project not loaded: {exc}")
 
     def build(self):
-        frame = ttk.Frame(self.root, padding=16)
+        frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill="both", expand=True)
+
+        # Reserve the bottom of the window FIRST, before expanding the preview.
+        # Tk packs widgets in order, so packing these after the large workspace
+        # caused Save/Open/Export MP4 to fall off short Windows displays.
+        footer = ttk.Frame(frame)
+        footer.pack(side="bottom", fill="x", pady=(5, 0))
+        actions = ttk.Frame(footer)
+        actions.pack(fill="x", pady=(2, 0))
+        ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
+        ttk.Button(actions, text="Open project", command=self.open_project).pack(side="left", padx=2)
+        self.render_button = ttk.Button(actions, text="Export MP4", command=self.export)
+        self.render_button.pack(side="right", padx=2)
+        ttk.Label(footer, textvariable=self.status, wraplength=1100).pack(
+            fill="x", pady=(4, 0))
+        self.root.bind("<Control-e>", lambda _event: self.export())
+
+        # Keep the editing timelines above the fixed footer; the scene preview
+        # is the only section that shrinks when a window is made shorter.
+        timeline_panel = ttk.Frame(frame)
+        timeline_panel.pack(side="bottom", fill="x", pady=(2, 2))
+
         ttk.Label(frame, text="StoryStudio", font=("Segoe UI", 22, "bold")).pack(anchor="w")
         ttk.Label(
             frame, text="Create animated scenes with characters, keyframes and local MP4 export."
@@ -203,7 +224,7 @@ class StoryStudioApp:
             ttk.Entry(camera_row, textvariable=self.camera_inputs[key], width=5).pack(side="left")
         ttk.Button(camera_row, text="Apply camera", command=self.apply_camera).pack(side="left", padx=8)
         workspace = ttk.Panedwindow(frame, orient="horizontal")
-        workspace.pack(fill="both", expand=True, pady=12)
+        workspace.pack(fill="both", expand=True, pady=(5, 4))
         scenes_panel = ttk.Frame(workspace)
         workspace.add(scenes_panel, weight=2)
         preview_panel = ttk.Frame(workspace)
@@ -247,14 +268,14 @@ class StoryStudioApp:
         self.preview.bind("<Configure>", lambda _event: self.draw_preview())
         self.preview.bind("<Button-1>", self.drag_selected_layer)
         self.preview.bind("<B1-Motion>", self.drag_selected_layer)
-        ttk.Label(frame, text="SCENE TIMELINE — click to select scene and time").pack(anchor="w")
-        self.timeline = tk.Canvas(frame, height=62, bg="#20232b", highlightthickness=0)
+        ttk.Label(timeline_panel, text="SCENE TIMELINE — click to select scene and time").pack(anchor="w")
+        self.timeline = tk.Canvas(timeline_panel, height=48, bg="#20232b", highlightthickness=0)
         self.timeline.pack(fill="x", pady=(3, 8))
         self.timeline.bind("<Configure>", lambda _event: self.draw_timeline())
         self.timeline.bind("<Button-1>", self.click_timeline)
-        self.timeline_info = ttk.Label(frame, text="Total: 0.0s")
+        self.timeline_info = ttk.Label(timeline_panel, text="Total: 0.0s")
         self.timeline_info.pack(anchor="w")
-        editor_toolbar = ttk.Frame(frame)
+        editor_toolbar = ttk.Frame(timeline_panel)
         editor_toolbar.pack(fill="x", pady=(7, 3))
         ttk.Label(editor_toolbar, text="KEYFRAME EDITOR").pack(side="left", padx=(0, 8))
         for field_name, variable in self.transform_inputs.items():
@@ -266,10 +287,10 @@ class StoryStudioApp:
                      state="readonly").pack(side="left")
         ttk.Button(editor_toolbar, text="Set keyframe", command=self.commit_keyframe).pack(side="left", padx=5)
         ttk.Button(editor_toolbar, text="Delete keyframe", command=self.remove_keyframe).pack(side="left", padx=5)
-        ttk.Label(frame, text="LAYER KEYFRAMES — click to scrub, drag diamonds to retime").pack(anchor="w")
-        motion_frame = ttk.Frame(frame)
+        ttk.Label(timeline_panel, text="LAYER KEYFRAMES — click to scrub, drag diamonds to retime").pack(anchor="w")
+        motion_frame = ttk.Frame(timeline_panel)
         motion_frame.pack(fill="x", pady=(3, 8))
-        self.motion_timeline = tk.Canvas(motion_frame, height=122, bg="#20232b",
+        self.motion_timeline = tk.Canvas(motion_frame, height=90, bg="#20232b",
                                           highlightthickness=0)
         self.motion_timeline.pack(side="left", fill="both", expand=True)
         self.motion_scroll = ttk.Scrollbar(motion_frame, orient="vertical",
@@ -280,18 +301,7 @@ class StoryStudioApp:
         self.motion_timeline.bind("<Button-1>", self.click_motion_timeline)
         self.motion_timeline.bind("<B1-Motion>", self.drag_motion_marker)
         self.motion_timeline.bind("<ButtonRelease-1>", self.release_motion_marker)
-        actions = ttk.Frame(frame)
-        actions.pack(fill="x")
-        ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
-        ttk.Button(actions, text="Open project", command=self.open_project).pack(side="left", padx=2)
-        self.render_button = ttk.Button(actions, text="Export MP4", command=self.export)
-        self.render_button.pack(side="right", padx=2)
-        ttk.Label(frame, textvariable=self.status, wraplength=790).pack(anchor="w", pady=12)
-        ttk.Label(
-            frame,
-            text="2D milestone: scene playback, editable keyframes, Fit/Fill framing. Character rigs and audio come later.",
-            foreground="#666666",
-        ).pack(anchor="w")
+
 
     def refresh(self, index=None):
         self.items.delete(0, "end")
