@@ -43,6 +43,40 @@ class ProjectTests(unittest.TestCase):
         doc=project.new_project();doc['scenes']=[project.new_scene() for _ in range(13)]
         with self.assertRaises(ValueError):project.validate(doc)
 
+    def test_optional_keyframe_tracks_and_old_projects(self):
+        legacy=project.new_project()
+        self.assertNotIn('keyframes',project.validate(legacy)['scenes'][0])
+        doc=copy.deepcopy(legacy)
+        doc['scenes'][0]['keyframes']=[
+            dict(t=0,x=.2,size=.7),
+            dict(t=5,x=.45,size=1.0),
+            dict(t=10,x=.7,size=1.25)
+        ]
+        original=copy.deepcopy(doc)
+        checked=project.validate(doc)
+        self.assertEqual(checked['scenes'][0]['keyframes'][-1]['size'],1.25)
+        self.assertEqual(doc,original)
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/'poses.json'
+            project.save(doc,path)
+            self.assertEqual(project.load(path),checked)
+
+    def test_invalid_keyframe_tracks(self):
+        good=[dict(t=0,x=.2,size=1),dict(t=5,x=.7,size=1.2)]
+        cases=[None,{},[dict(t=0,x=.2)],good+[dict(t=5,x=.4,size=1)],
+               list(reversed(good)),[dict(t=11,x=.3,size=1)],
+               [dict(t=float('nan'),x=.3,size=1)],
+               [dict(t=1,x=.8,size=1)],
+               [dict(t=1,x=.3,size=0.2)],
+               [dict(t=1,x=.3,size=1,unknown=True)],
+               [dict(t=i/10,x=.4,size=1) for i in range(13)]]
+        for frames in cases:
+            with self.subTest(frames=frames):
+                doc=project.new_project()
+                doc['scenes'][0]['keyframes']=frames
+                with self.assertRaises(ValueError):
+                    project.validate(doc)
+
     def test_round_trip_relative_audio(self):
         with tempfile.TemporaryDirectory() as td:
             folder=Path(td);audio=folder/'voice.wav';audio.write_bytes(b'original')

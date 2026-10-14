@@ -24,6 +24,24 @@ function caption(text,W,H,portrait){
   ctx.fillStyle='#fff9e9';ctx.textAlign='center';ctx.textBaseline='top';
   lines.forEach((line,i)=>ctx.fillText(line,W/2,y+15+i*(font+6)));ctx.textBaseline='alphabetic';
 }
+// Deterministic pose interpolation. At frame t, only neighboring saved
+// keyframes matter, so seeking and exporting produce identical drawings.
+export function poseAtTime(scene,t){
+  const frames=scene.keyframes||[];
+  if(!frames.length)return {x:scene.x,size:scene.size};
+  if(t<=frames[0].t)return {x:frames[0].x,size:frames[0].size};
+  if(t>=frames[frames.length-1].t){
+    const last=frames[frames.length-1];return {x:last.x,size:last.size};
+  }
+  for(let i=1;i<frames.length;i++){
+    const a=frames[i-1],b=frames[i];
+    if(t<=b.t){
+      const u=ss(seg(t,a.t,b.t));
+      return {x:lerp(a.x,b.x,u),size:lerp(a.size,b.size,u)};
+    }
+  }
+  return {x:scene.x,size:scene.size};
+}
 function picture(scene,t,W,H){
   const portrait=H>W;
   const colors={meadow:['#8cdeed','#e1f5d0','#75b896','#98cf78'],sunset:['#efb0b1','#ffe0aa','#bf91a3','#d5b18c'],night:['#293e68','#647fa2','#526b80','#749a91']}[scene.background];
@@ -33,11 +51,12 @@ function picture(scene,t,W,H){
   ellipse(W*.24,H*.85,W*.75,H*.37,colors[2]);ellipse(W*.9,H*.94,W*.8,H*.43,colors[3]);
   for(let i=0;i<22;i++){const x=hash(i+1)*W,y=H*(.7+hash(i+30)*.3);ellipse(x,y,4,7,'#fff0b7')}
   const phase=t/scene.duration*10;
-  const baseX=portrait?W*(.29+scene.x*.45):W*scene.x;
+  const animated=poseAtTime(scene,t);
+  const baseX=portrait?W*(.29+animated.x*.45):W*animated.x;
   const arrival=scene.action==='story'?ss(seg(phase,.3,2.1)):1;
   const x=lerp(-150,baseX,arrival);
   const walk=scene.action==='walk'?Math.sin(t*.7*scene.speed)*(portrait?45:110):0;
-  const scale=(portrait?1.05:1.0)*scene.size;
+  const scale=(portrait?1.05:1.0)*animated.size;
   const y=portrait?H*.64:H*.63;
   const jump=scene.action==='story' && phase>5.15 && phase<6.85?Math.sin(Math.PI*seg(phase,5.15,6.85))*80:0;
   drawCharacter(ctx,{kind:scene.character,expression:scene.expression,action:scene.action,speed:scene.speed,t,x:x+walk,y:y-jump,scale});
