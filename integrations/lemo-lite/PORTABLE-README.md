@@ -30,9 +30,11 @@ by path, not embedded: copy it along with the project when moving to another PC.
 Source projects use the version 2 JSON format; legacy Synfig/artwork files and
 projects from the separate 2D editor branch are not converted or overwritten.
 
-One browser is used at a time and frames stream directly to FFmpeg (two encoder
+One capture browser is used at a time and frames stream directly to FFmpeg (two encoder
 threads), with no image sequence accumulated in RAM or on disk. Use Draft for
 quick checks. A Windows CI pass is not a hardware performance guarantee.
+The live player opens a separate browser profile beneath this studio's `cache`
+folder and closes with the editor. Your normal browser profile is not used.
 
 ## Scope
 

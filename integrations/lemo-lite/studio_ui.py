@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import subprocess
 import threading
 import traceback
 import webbrowser
@@ -48,6 +49,7 @@ class StudioApp(tk.Tk):
         self.cancel_event = threading.Event()
         self.events = queue.Queue()
         self.preview_server = None
+        self.preview_process = None
         self.closing = False
         self.revision = 0
         self._photo = None
@@ -320,6 +322,13 @@ class StudioApp(tk.Tk):
         self.after(60,self.poll_events)
 
     def _close_server(self):
+        if self.preview_process:
+            if self.preview_process.poll() is None:
+                self.preview_process.terminate()
+                try:self.preview_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.preview_process.kill();self.preview_process.wait(timeout=5)
+            self.preview_process=None
         if self.preview_server:self.preview_server.__exit__(None,None,None);self.preview_server=None
 
     def open_preview(self):
@@ -327,7 +336,15 @@ class StudioApp(tk.Tk):
         try:
             self._close_server();self.preview_server=renderer.local_server(copy.deepcopy(self.document))
             address=self.preview_server.__enter__().replace('?capture=1','')
-            webbrowser.open(address);self.status.set('Live preview opened. Reopen it after edits. Audio is included in MP4 exports.')
+            # A separate profile keeps new browser caches beside this studio.
+            # Never attach to or terminate the user's normal browser session.
+            profile=self.workspace/'cache'/f'live-preview-{os.getpid()}'
+            profile.mkdir(parents=True,exist_ok=True)
+            self.preview_process=subprocess.Popen(
+                [renderer.find_chrome(),f'--user-data-dir={profile}',f'--app={address}',
+                 '--no-first-run','--no-default-browser-check','--disable-gpu'],
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=renderer.NO_WINDOW)
+            self.status.set('Live preview opened. Reopen it after edits. Audio is included in MP4 exports.')
         except Exception as exc:self.status.set(str(exc))
 
     def confirm_discard(self):

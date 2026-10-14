@@ -66,6 +66,13 @@ def run(output):
             pump_until(lambda:not app.busy,180)
             assert target.is_file() and 'Verified MP4 saved' in app.status.get(),app.status.get()
             assert app.export_button.instate(['!disabled'])
+            # Exercise the live player launch without touching the normal browser profile.
+            with patch('studio_ui.subprocess.Popen') as launch:
+                app.live_button.invoke()
+                command=launch.call_args.args[0]
+                assert any(arg.startswith('--user-data-dir='+str(Path(td)/'cache')) for arg in command)
+                assert any(arg.startswith('--app=http://127.0.0.1:') for arg in command)
+                app._close_server()
             assert not callback_errors,callback_errors
             (output/'gui-results.json').write_text(json.dumps(dict(result='PASS',checks=['laptop geometry','widget edits','scene order','portrait preset','save/open','browser frame','GUI MP4 export','worker completion'],compiled=bool(__import__('sys').frozen) if hasattr(__import__('sys'),'frozen') else False),indent=2))
         finally:
