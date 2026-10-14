@@ -51,7 +51,7 @@ jobs:
           python integrations/lemo-lite/renderer.py --duration 2 --width 640 --height 360 --fps 12 --output exports/windows-native-smoke.mp4
       - name: Build Python-free GUI executable
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name StoryStudio --collect-all playwright --distpath dist --workpath build\pyinstaller --specpath build\spec --add-data "integrations/lemo-lite/scene;scene" --add-data "integrations/lemo-lite/vendor;vendor" integrations/lemo-lite/portable_app.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name StoryStudio --collect-all playwright --distpath dist --workpath build\pyinstaller --specpath . --add-data "integrations/lemo-lite/scene;scene" --add-data "integrations/lemo-lite/vendor;vendor" integrations/lemo-lite/portable_app.py
           if (-not (Test-Path "dist\StoryStudio\StoryStudio.exe")) { throw "Portable EXE missing" }
           New-Item -Force -ItemType Directory "dist\StoryStudio\bin" | Out-Null
           New-Item -Force -ItemType Directory "dist\StoryStudio\licenses" | Out-Null
