@@ -20,8 +20,22 @@ jobs:
           python-version: "3.12"
       - name: Check Python syntax
         run: python -m compileall -q engine tests
+      - name: Install 2D animation dependency
+        run: python -m pip install Pillow==12.3.0
       - name: Run headless renderer tests
         run: python -m unittest discover -s tests -v
+
+  gui-smoke:
+    name: Linux Tkinter UI smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system Tkinter, Pillow and virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-pil python3-pil.imagetk xvfb
+      - name: Launch desktop editor and test canvas/keyframes
+        run: xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
 
   ffmpeg-smoke:
     name: FFmpeg render smoke test
@@ -41,9 +55,15 @@ jobs:
           ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x240:r=24 -t 2 -c:v libx264 -pix_fmt yuv420p artifacts/smoke.mp4
           ffmpeg -hide_banner -loglevel error -i artifacts/smoke.mp4 -f null -
           ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 artifacts/smoke.mp4
+      - name: Install 2D animation dependency
+        run: python -m pip install Pillow==12.3.0
       - name: End-to-end StoryStudio scene render test
         run: python tests/render_integration.py
+      - name: Layered animation export integration test
+        run: python tests/render_layers_integration.py artifacts/layered-demo.mp4
+      - name: Landscape Fit/Fill export integration
+        run: python tests/render_landscape_integration.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-smoke-mp4
-          path: artifacts/smoke.mp4
+          name: storystudio-2d-render-previews
+          path: artifacts/*.mp4

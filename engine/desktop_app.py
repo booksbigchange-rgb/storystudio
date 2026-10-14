@@ -8,10 +8,14 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 from pathlib import Path
 from timeline import scene_at, scene_ranges, total_duration
 from camera import DEFAULT as CAMERA_DEFAULT, camera_values, zoompan_filter
+from animation import validated_layers, retime_layers, upsert_keyframe, move_keyframe, delete_keyframe, layer_state, ANIMATABLE
+from layer_render import render_layer_segment
+from stage import DEFAULT as CANVAS_DEFAULT, PRESETS, validate_canvas
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -35,13 +39,17 @@ def ffmpeg_binary():
     return str(FFMPEG) if FFMPEG.is_file() else shutil.which("ffmpeg")
 
 
-def render_scenes(scenes, output, progress=None):
+def render_scenes(scenes, output, progress=None, canvas=None):
     """Render still-image scenes into a vertical H.264 MP4, with no shell calls."""
     if not scenes:
         raise ValueError("Add at least one scene before rendering")
     binary = ffmpeg_binary()
     if not binary:
         raise RuntimeError("FFmpeg not found in tools/ffmpeg or PATH")
+    settings = validate_canvas(canvas) if canvas is not None else {
+        "width": WIDTH, "height": HEIGHT, "fit": "fill"}
+    frame_width, frame_height, frame_fit = (
+        settings["width"], settings["height"], settings["fit"])
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     job = TEMP / ("render-" + uuid.uuid4().hex)
@@ -57,22 +65,32 @@ def render_scenes(scenes, output, progress=None):
                 raise ValueError("Scene duration must be between 0.5 and 120 seconds")
             frames = round(duration * FPS)
             segment = job / f"scene_{index:04d}.mp4"
-            # Scale/crop to fill a vertical frame; subtle movement without
-            # fabricating character animation from a single illustration.
-            vf = (
-                f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={WIDTH}:{HEIGHT},"
-                + zoompan_filter(scene, frames, WIDTH, HEIGHT, FPS)
-                + ",format=yuv420p"
-            )
-            cmd = [
-                binary, "-hide_banner", "-loglevel", "error", "-y",
-                "-loop", "1", "-i", str(image), "-vf", vf,
-                "-frames:v", str(frames), "-an",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                "-pix_fmt", "yuv420p", str(segment)
-            ]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            if scene.get("layers"):
+                render_layer_segment(scene, segment, binary, frame_width, frame_height, FPS, frame_fit)
+            else:
+                # Scale/crop to fill a vertical frame; subtle movement without
+                # fabricating character animation from a single illustration.
+                if frame_fit == "fit":
+                    background_filter = (
+                        f"scale={frame_width}:{frame_height}:force_original_aspect_ratio=decrease,"
+                        f"pad={frame_width}:{frame_height}:(ow-iw)/2:(oh-ih)/2:color=0x141820,"
+                    )
+                else:
+                    background_filter = (
+                        f"scale={frame_width}:{frame_height}:force_original_aspect_ratio=increase,"
+                        f"crop={frame_width}:{frame_height},"
+                    )
+                vf = (background_filter
+                      + zoompan_filter(scene, frames, frame_width, frame_height, FPS)
+                      + ",format=yuv420p")
+                cmd = [
+                    binary, "-hide_banner", "-loglevel", "error", "-y",
+                    "-loop", "1", "-i", str(image), "-vf", vf,
+                    "-frames:v", str(frames), "-an",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                    "-pix_fmt", "yuv420p", str(segment)
+                ]
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
             segments.append(segment)
             if progress:
                 progress(f"Rendered scene {index + 1}/{len(scenes)}")
@@ -98,9 +116,47 @@ def render_scenes(scenes, output, progress=None):
 class StoryStudioApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("StoryStudio — Desktop MVP")
-        self.root.geometry("1280x780")
+        self.root.title("StoryStudio — 2D Animation Studio")
+        self.root.geometry("1440x900")
+        self.root.minsize(1000, 690)
+        self.root.configure(bg="#111827")
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        style.configure(".", background="#111827", foreground="#e2e8f0",
+                        fieldbackground="#1f2937", font=("Segoe UI", 10))
+        style.configure("TFrame", background="#111827")
+        style.configure("TLabel", background="#111827", foreground="#e2e8f0")
+        style.configure("TButton", background="#29374e", foreground="#f1f5f9",
+                        padding=(7, 4), borderwidth=1)
+        style.map("TButton", background=[("active", "#38557e")])
+        style.configure("TEntry", fieldbackground="#1f2937", foreground="#f8fafc",
+                        insertcolor="#f8fafc")
+        style.configure("TCombobox", fieldbackground="#1f2937",
+                        foreground="#f8fafc", background="#29374e")
+        style.map("TCombobox", fieldbackground=[("readonly", "#29374e")],
+                  foreground=[("readonly", "#f8fafc")])
         self._preview_image = None
+        self._stage_rect = None
+        self.preview_end = False
+        self.playhead = 0.0
+        self.playing = False
+        self._play_clock = None
+        self._play_from = 0.0
+        self._play_job = None
+        self._sync_scrubber = False
+        self.canvas_settings = dict(CANVAS_DEFAULT)
+        self.canvas_preset = tk.StringVar(value="Portrait 9:16")
+        self.fit_mode = tk.StringVar(value="fill")
+        self.time_readout = tk.StringVar(value="0.00 / 0.00 s")
+        self.selected_key_index = None
+        self._active_layer_id = None
+        self._motion_drag = None
+        self.ease_input = tk.StringVar(value="smooth")
+        self.transform_inputs = {
+            name: tk.StringVar(value=str(default))
+            for name, default in (("x", 0.5), ("y", 0.5), ("scale", 1.0),
+                                  ("rotation", 0.0), ("opacity", 1.0))
+        }
         self.scenes = []
         self.project_path = PROJECTS / "desktop-mvp" / "story.json"
         self.status = tk.StringVar(value="Add illustrated scenes to begin.")
@@ -114,12 +170,33 @@ class StoryStudioApp:
                 self.status.set(f"Project not loaded: {exc}")
 
     def build(self):
-        frame = ttk.Frame(self.root, padding=16)
+        frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill="both", expand=True)
+
+        # Reserve the bottom of the window FIRST, before expanding the preview.
+        # Tk packs widgets in order, so packing these after the large workspace
+        # caused Save/Open/Export MP4 to fall off short Windows displays.
+        footer = ttk.Frame(frame)
+        footer.pack(side="bottom", fill="x", pady=(5, 0))
+        actions = ttk.Frame(footer)
+        actions.pack(fill="x", pady=(2, 0))
+        ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
+        ttk.Button(actions, text="Open project", command=self.open_project).pack(side="left", padx=2)
+        self.render_button = ttk.Button(actions, text="Export MP4", command=self.export)
+        self.render_button.pack(side="right", padx=2)
+        ttk.Label(footer, textvariable=self.status, wraplength=1100).pack(
+            fill="x", pady=(4, 0))
+        self.root.bind("<Control-e>", lambda _event: self.export())
+
+        # Keep the editing timelines above the fixed footer; the scene preview
+        # is the only section that shrinks when a window is made shorter.
+        timeline_panel = ttk.Frame(frame)
+        timeline_panel.pack(side="bottom", fill="x", pady=(2, 2))
+
         ttk.Label(frame, text="StoryStudio", font=("Segoe UI", 22, "bold")).pack(anchor="w")
         ttk.Label(
-            frame, text="Create vertical moving-storybook videos from still images."
-        ).pack(anchor="w", pady=(0, 12))
+            frame, text="Create animated scenes with characters, keyframes and local MP4 export."
+        ).pack(anchor="w", pady=(0, 8))
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill="x", pady=4)
         ttk.Button(toolbar, text="Add image", command=self.add).pack(side="left", padx=2)
@@ -129,6 +206,16 @@ class StoryStudioApp:
         ttk.Label(toolbar, text="Seconds:").pack(side="left", padx=(16, 4))
         ttk.Entry(toolbar, textvariable=self.duration, width=6).pack(side="left")
         ttk.Button(toolbar, text="Apply duration", command=self.apply_duration).pack(side="left", padx=4)
+        canvas_row = ttk.Frame(frame)
+        canvas_row.pack(fill="x", pady=(5, 2))
+        ttk.Label(canvas_row, text="CANVAS").pack(side="left", padx=(0, 8))
+        ttk.Combobox(canvas_row, textvariable=self.canvas_preset,
+                     values=list(PRESETS), width=19, state="readonly").pack(side="left", padx=3)
+        ttk.Label(canvas_row, text="Image framing").pack(side="left", padx=(12, 3))
+        ttk.Combobox(canvas_row, textvariable=self.fit_mode,
+                     values=("fill", "fit"), width=7, state="readonly").pack(side="left", padx=3)
+        ttk.Button(canvas_row, text="Apply canvas", command=self.apply_canvas).pack(side="left", padx=6)
+        ttk.Label(canvas_row, text="Fit = entire image, Fill = crop to stage").pack(side="left", padx=8)
         camera_row = ttk.Frame(frame)
         camera_row.pack(fill="x", pady=(6, 2))
         ttk.Label(camera_row, text="CAMERA KEYFRAMES").pack(side="left", padx=(0, 8))
@@ -137,38 +224,84 @@ class StoryStudioApp:
             ttk.Entry(camera_row, textvariable=self.camera_inputs[key], width=5).pack(side="left")
         ttk.Button(camera_row, text="Apply camera", command=self.apply_camera).pack(side="left", padx=8)
         workspace = ttk.Panedwindow(frame, orient="horizontal")
-        workspace.pack(fill="both", expand=True, pady=12)
+        workspace.pack(fill="both", expand=True, pady=(5, 4))
         scenes_panel = ttk.Frame(workspace)
         workspace.add(scenes_panel, weight=2)
         preview_panel = ttk.Frame(workspace)
         workspace.add(preview_panel, weight=3)
         ttk.Label(scenes_panel, text="SCENES").pack(anchor="w")
-        self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=13, exportselection=False)
+        self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=9, exportselection=False,
+                                bg="#1f2937", fg="#e2e8f0", selectbackground="#2563eb",
+                                selectforeground="#ffffff", relief="flat")
         self.items.pack(fill="both", expand=True)
         self.items.bind("<<ListboxSelect>>", self.on_select)
-        ttk.Label(preview_panel, text="SCENE PREVIEW (still image)").pack(anchor="w")
+        ttk.Label(scenes_panel, text="CHARACTER / PROP LAYERS").pack(anchor="w", pady=(10, 2))
+        self.layer_items = tk.Listbox(scenes_panel, font=("Segoe UI", 10), height=5,
+                                      exportselection=False, bg="#1f2937", fg="#e2e8f0",
+                                      selectbackground="#2563eb", selectforeground="#ffffff",
+                                      relief="flat")
+        self.layer_items.pack(fill="x")
+        self.layer_items.bind("<<ListboxSelect>>", self.on_layer_select)
+        layer_actions = ttk.Frame(scenes_panel)
+        layer_actions.pack(fill="x", pady=3)
+        ttk.Button(layer_actions, text="Add PNG", command=self.add_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Remove", command=self.remove_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Animate right", command=self.animate_layer).pack(side="left", padx=2)
+        ttk.Button(layer_actions, text="Clear motion", command=self.clear_motion).pack(side="left", padx=2)
+        ttk.Label(preview_panel, text="SCENE PREVIEW — drag selected character to position it").pack(anchor="w")
+        preview_actions = ttk.Frame(preview_panel)
+        preview_actions.pack(fill="x")
+        ttk.Button(preview_actions, text="Start frame", command=lambda: self.show_pose(False)).pack(side="left", padx=2)
+        ttk.Button(preview_actions, text="End frame", command=lambda: self.show_pose(True)).pack(side="left", padx=2)
+        self.play_button = ttk.Button(preview_actions, text="Play", command=self.toggle_play)
+        self.play_button.pack(side="left", padx=7)
+        ttk.Button(preview_actions, text="-1 frame",
+                   command=lambda: self.step_frame(-1)).pack(side="left", padx=2)
+        ttk.Button(preview_actions, text="+1 frame",
+                   command=lambda: self.step_frame(1)).pack(side="left", padx=2)
+        self.scrubber = ttk.Scale(preview_actions, from_=0, to=5,
+                                  command=self.scrub_changed, length=180)
+        self.scrubber.pack(side="left", fill="x", expand=True, padx=8)
+        ttk.Label(preview_actions, textvariable=self.time_readout).pack(side="left", padx=3)
         self.preview = tk.Canvas(preview_panel, width=300, height=420, bg="#20232b", highlightthickness=0)
         self.preview.pack(fill="both", expand=True)
         self.preview.bind("<Configure>", lambda _event: self.draw_preview())
-        ttk.Label(frame, text="TIMELINE — click a scene to select it").pack(anchor="w")
-        self.timeline = tk.Canvas(frame, height=76, bg="#20232b", highlightthickness=0)
-        self.timeline.pack(fill="x", pady=(4, 12))
+        self.preview.bind("<Button-1>", self.drag_selected_layer)
+        self.preview.bind("<B1-Motion>", self.drag_selected_layer)
+        ttk.Label(timeline_panel, text="SCENE TIMELINE — click to select scene and time").pack(anchor="w")
+        self.timeline = tk.Canvas(timeline_panel, height=48, bg="#20232b", highlightthickness=0)
+        self.timeline.pack(fill="x", pady=(3, 8))
         self.timeline.bind("<Configure>", lambda _event: self.draw_timeline())
         self.timeline.bind("<Button-1>", self.click_timeline)
-        self.timeline_info = ttk.Label(frame, text="Total: 0.0s")
+        self.timeline_info = ttk.Label(timeline_panel, text="Total: 0.0s")
         self.timeline_info.pack(anchor="w")
-        actions = ttk.Frame(frame)
-        actions.pack(fill="x")
-        ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
-        ttk.Button(actions, text="Open project", command=self.open_project).pack(side="left", padx=2)
-        self.render_button = ttk.Button(actions, text="Export MP4", command=self.export)
-        self.render_button.pack(side="right", padx=2)
-        ttk.Label(frame, textvariable=self.status, wraplength=790).pack(anchor="w", pady=12)
-        ttk.Label(
-            frame,
-            text="MVP: image sequencing + gentle camera zoom. Character rigs, audio and lip-sync come later.",
-            foreground="#666666",
-        ).pack(anchor="w")
+        editor_toolbar = ttk.Frame(timeline_panel)
+        editor_toolbar.pack(fill="x", pady=(7, 3))
+        ttk.Label(editor_toolbar, text="KEYFRAME EDITOR").pack(side="left", padx=(0, 8))
+        for field_name, variable in self.transform_inputs.items():
+            ttk.Label(editor_toolbar, text=field_name).pack(side="left", padx=(5, 2))
+            ttk.Entry(editor_toolbar, textvariable=variable, width=6).pack(side="left")
+        ttk.Label(editor_toolbar, text="easing").pack(side="left", padx=(8, 2))
+        ttk.Combobox(editor_toolbar, textvariable=self.ease_input,
+                     values=("smooth", "linear", "hold"), width=7,
+                     state="readonly").pack(side="left")
+        ttk.Button(editor_toolbar, text="Set keyframe", command=self.commit_keyframe).pack(side="left", padx=5)
+        ttk.Button(editor_toolbar, text="Delete keyframe", command=self.remove_keyframe).pack(side="left", padx=5)
+        ttk.Label(timeline_panel, text="LAYER KEYFRAMES — click to scrub, drag diamonds to retime").pack(anchor="w")
+        motion_frame = ttk.Frame(timeline_panel)
+        motion_frame.pack(fill="x", pady=(3, 8))
+        self.motion_timeline = tk.Canvas(motion_frame, height=90, bg="#20232b",
+                                          highlightthickness=0)
+        self.motion_timeline.pack(side="left", fill="both", expand=True)
+        self.motion_scroll = ttk.Scrollbar(motion_frame, orient="vertical",
+                                            command=self.motion_timeline.yview)
+        self.motion_scroll.pack(side="right", fill="y")
+        self.motion_timeline.configure(yscrollcommand=self.motion_scroll.set)
+        self.motion_timeline.bind("<Configure>", lambda _event: self.draw_motion_timeline())
+        self.motion_timeline.bind("<Button-1>", self.click_motion_timeline)
+        self.motion_timeline.bind("<B1-Motion>", self.drag_motion_marker)
+        self.motion_timeline.bind("<ButtonRelease-1>", self.release_motion_marker)
+
 
     def refresh(self, index=None):
         self.items.delete(0, "end")
@@ -176,8 +309,11 @@ class StoryStudioApp:
             self.items.insert("end", f"{n:02d}   {Path(scene['image']).name}   —   {scene['duration']:g} seconds")
         if index is not None and 0 <= index < len(self.scenes):
             self.items.selection_set(index)
+        self.selected_key_index = None
+        self._active_layer_id = None
+        self.refresh_layers()
         self.draw_timeline()
-        self.draw_preview()
+        self.set_playhead(0)
 
     def selected(self):
         selection = self.items.curselection()
@@ -208,46 +344,411 @@ class StoryStudioApp:
         self.refresh(index + delta)
 
     def on_select(self, _event=None):
+        self.stop_playback()
         index = self.selected()
         if index is not None:
             self.duration.set(str(self.scenes[index]["duration"]))
             for key, value in camera_values(self.scenes[index]).items():
                 self.camera_inputs[key].set(str(value))
+        self.preview_end = False
+        self.selected_key_index = None
+        self._active_layer_id = None
+        self.playhead = 0.0
+        self.refresh_layers()
         self.draw_timeline()
-        self.draw_preview()
+        self.set_playhead(0)
 
     def draw_preview(self):
         self.preview.delete("all")
         self._preview_image = None
+        self._stage_rect = None
         w, h = max(self.preview.winfo_width(), 100), max(self.preview.winfo_height(), 100)
         index = self.selected()
         if index is None:
             self.preview.create_text(w // 2, h // 2, text="Select a scene to preview", fill="white")
             return
-        path = Path(self.scenes[index]["image"])
+        scene = self.scenes[index]
+        path = Path(scene["image"])
         if not path.is_file():
             self.preview.create_text(w // 2, h // 2, text="Image not found", fill="#ffb3b3")
             return
         try:
-            # Pillow supports JPEG, PNG, and BMP with aspect-preserving scaling.
-            from PIL import Image, ImageTk
-            with Image.open(path) as image:
-                image.thumbnail((max(w - 16, 1), max(h - 16, 1)))
-                self._preview_image = ImageTk.PhotoImage(image.copy())
-        except ImportError:
-            try:
-                self._preview_image = tk.PhotoImage(file=str(path))
-                factor = max(1, (self._preview_image.width() + w - 1) // w,
-                             (self._preview_image.height() + h - 1) // h)
-                self._preview_image = self._preview_image.subsample(factor)
-            except tk.TclError:
-                self.preview.create_text(w // 2, h // 2,
-                    text="Install Pillow to preview this format", fill="white")
-                return
-        except (OSError, ValueError, tk.TclError) as exc:
-            self.preview.create_text(w // 2, h // 2, text=f"Preview unavailable: {exc}", fill="white", width=w - 20)
+            from PIL import ImageTk
+            from layer_render import render_scene_frame
+            full_width = self.canvas_settings["width"]
+            full_height = self.canvas_settings["height"]
+            scale = min((w - 20) / full_width, (h - 20) / full_height)
+            pw = max(1, round(full_width * scale))
+            ph = max(1, round(full_height * scale))
+            at = min(max(self.playhead, 0), scene["duration"])
+            # Render at on-screen size so playback stays CPU-friendly.
+            output = render_scene_frame(
+                scene, at, pw, ph, self.canvas_settings["fit"])
+            self._preview_image = ImageTk.PhotoImage(output)
+            left, top = (w - pw) // 2, (h - ph) // 2
+            self._stage_rect = (left, top, pw, ph)
+            self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+            self.preview.create_rectangle(left, top, left + pw, top + ph,
+                                          outline="#64748b", width=1)
+        except (OSError, ValueError, RuntimeError, tk.TclError) as exc:
+            self.preview.create_text(w // 2, h // 2, fill="#ffb3b3",
+                                     text=f"Preview unavailable: {exc}", width=w - 20)
+
+    def set_playhead(self, seconds, update_slider=True):
+        index = self.selected()
+        if index is None:
+            self.playhead = 0.0
+            self.time_readout.set("0.00 / 0.00 s")
             return
-        self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+        duration = float(self.scenes[index]["duration"])
+        self.playhead = max(0.0, min(float(seconds), duration))
+        self.time_readout.set(f"{self.playhead:.2f} / {duration:.2f} s")
+        if update_slider:
+            self._sync_scrubber = True
+            try:
+                self.scrubber.configure(to=duration)
+                self.scrubber.set(self.playhead)
+            finally:
+                self._sync_scrubber = False
+        self.draw_preview()
+        self.draw_motion_timeline()
+        self.refresh_transform_fields()
+
+    def step_frame(self, offset):
+        self.stop_playback()
+        self.set_playhead(self.playhead + offset / FPS)
+
+    def scrub_changed(self, value):
+        if self._sync_scrubber:
+            return
+        self.stop_playback()
+        if self.selected() is not None:
+            self.set_playhead(float(value), update_slider=False)
+
+    def toggle_play(self):
+        if self.playing:
+            self.stop_playback()
+            return
+        index = self.selected()
+        if index is None:
+            return
+        duration = float(self.scenes[index]["duration"])
+        if self.playhead >= duration:
+            self.set_playhead(0)
+        self.playing = True
+        self._play_from = self.playhead
+        self._play_clock = time.monotonic()
+        self.play_button.configure(text="Pause")
+        self.tick_playback()
+
+    def tick_playback(self):
+        if not self.playing:
+            return
+        index = self.selected()
+        if index is None:
+            self.stop_playback()
+            return
+        duration = float(self.scenes[index]["duration"])
+        seconds = self._play_from + (time.monotonic() - self._play_clock)
+        self.set_playhead(min(seconds, duration))
+        if seconds >= duration:
+            self.stop_playback()
+        else:
+            # Preview is approximate 10 fps, while the final MP4 remains 24 fps.
+            self._play_job = self.root.after(100, self.tick_playback)
+
+    def stop_playback(self):
+        self.playing = False
+        if self._play_job is not None:
+            self.root.after_cancel(self._play_job)
+            self._play_job = None
+        if hasattr(self, "play_button"):
+            self.play_button.configure(text="Play")
+
+    def apply_canvas(self):
+        preset = self.canvas_preset.get()
+        if preset not in PRESETS:
+            messagebox.showerror("Canvas", "Choose a supported canvas preset")
+            return
+        width, height = PRESETS[preset]
+        try:
+            updated = validate_canvas(
+                {"width": width, "height": height, "fit": self.fit_mode.get()})
+        except ValueError as exc:
+            messagebox.showerror("Canvas", str(exc))
+            return
+        self.stop_playback()
+        self.canvas_settings = updated
+        self.draw_preview()
+        self.status.set(f"Canvas set to {width}x{height}, {updated['fit']} mode.")
+
+    def draw_motion_timeline(self):
+        if not hasattr(self, "motion_timeline"):
+            return
+        canvas = self.motion_timeline
+        canvas.delete("all")
+        scene_index = self.selected()
+        if scene_index is None:
+            canvas.create_text(14, 30, anchor="w", text="Select a scene to edit keyframes",
+                               fill="#e2e8f0")
+            return
+        scene = self.scenes[scene_index]
+        duration = float(scene["duration"])
+        width = max(260, canvas.winfo_width())
+        x0, x1 = 142, width - 18
+        rows = scene.get("layers", [])
+        full_height = max(124, 46 + 28 * len(rows))
+        canvas.configure(scrollregion=(0, 0, width, full_height))
+        canvas.create_rectangle(0, 0, width, full_height, fill="#20232b", outline="")
+        canvas.create_text(12, 12, anchor="w", text="ANIMATED LAYERS", fill="#f1f5f9")
+        for tick in range(5):
+            x = x0 + tick / 4 * (x1 - x0)
+            canvas.create_line(x, 23, x, full_height, fill="#334155")
+            canvas.create_text(x, 11, text=f"{duration * tick / 4:.1f}s",
+                               fill="#94a3b8", font=("Segoe UI", 8))
+        active = self.selected_layer()
+        for idx, layer in enumerate(rows):
+            y = 39 + idx * 28
+            fill = "#29334a" if idx == active else "#252b36"
+            canvas.create_rectangle(0, y - 12, width, y + 13, fill=fill, outline="")
+            canvas.create_text(12, y, anchor="w", text=layer.get("name", f"Layer {idx + 1}")[:16],
+                               fill="#e2e8f0", font=("Segoe UI", 9))
+            canvas.create_line(x0, y, x1, y, fill="#65748a", width=2)
+            for marker_index, marker in enumerate(layer.get("keyframes", [])):
+                mx = x0 + marker["time"] / duration * (x1 - x0)
+                is_active = (idx == active and marker_index == self.selected_key_index)
+                color = "#fbbf24" if is_active else "#67e8f9"
+                canvas.create_polygon(mx, y - 7, mx + 7, y, mx, y + 7, mx - 7, y,
+                                      fill=color, outline="#09121e", width=1)
+        line_x = x0 + self.playhead / duration * (x1 - x0)
+        canvas.create_line(line_x, 24, line_x, full_height, fill="#f97316", width=2)
+        canvas.create_polygon(line_x - 5, 23, line_x + 5, 23, line_x, 30,
+                              fill="#f97316", outline="")
+
+    def refresh_transform_fields(self):
+        index, layer_index = self.selected(), self.selected_layer()
+        if index is None or layer_index is None:
+            return
+        layer = self.scenes[index].get("layers", [])[layer_index]
+        state = layer_state(validated_layers([layer], self.scenes[index]["duration"])[0],
+                            self.playhead)
+        for key, value in self.transform_inputs.items():
+            value.set(f"{state[key]:.3f}")
+
+    def on_layer_select(self, _event=None):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is not None and layer_index is not None:
+            layer_id = self.scenes[scene_index]["layers"][layer_index]["id"]
+            if layer_id != self._active_layer_id:
+                self.selected_key_index = None
+            self._active_layer_id = layer_id
+        self.refresh_transform_fields()
+        self.draw_preview()
+        self.draw_motion_timeline()
+
+    def commit_keyframe(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            self.status.set("Select a character to set a keyframe.")
+            return
+        scene = self.scenes[scene_index]
+        try:
+            values = {name: float(field.get())
+                      for name, field in self.transform_inputs.items()}
+            moment = round(self.playhead, 2)
+            edited = upsert_keyframe(scene["layers"][layer_index], scene["duration"],
+                                     moment, values, self.ease_input.get())
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror("Keyframe", str(exc))
+            return
+        scene["layers"][layer_index] = edited
+        self.selected_key_index = next((idx for idx, key in
+            enumerate(edited.get("keyframes", []))
+            if abs(key["time"] - moment) < .001), None)
+        self.refresh_layers(layer_index)
+        self.set_playhead(moment)
+        self.status.set(f"Keyframe saved at {moment:.2f}s. Drag its diamond to retime.")
+
+    def remove_keyframe(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None or self.selected_key_index is None:
+            self.status.set("Click a keyframe diamond to select it before deleting.")
+            return
+        scene = self.scenes[scene_index]
+        try:
+            scene["layers"][layer_index] = delete_keyframe(
+                scene["layers"][layer_index], scene["duration"], self.selected_key_index)
+        except (ValueError, IndexError) as exc:
+            messagebox.showerror("Keyframe", str(exc))
+            return
+        self.selected_key_index = None
+        self.refresh_layers(layer_index)
+        self.set_playhead(self.playhead)
+
+    def click_motion_timeline(self, event):
+        self.stop_playback()
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        scene = self.scenes[scene_index]
+        width = max(260, self.motion_timeline.winfo_width())
+        x0, x1 = 142, width - 18
+        y = self.motion_timeline.canvasy(event.y)
+        row = round((y - 39) / 28)
+        if 0 <= row < len(scene.get("layers", [])) and abs(y - (39 + row * 28)) <= 13:
+            self.layer_items.selection_clear(0, "end")
+            self.layer_items.selection_set(row)
+            self._active_layer_id = scene["layers"][row]["id"]
+            self.layer_items.see(row)
+            frame_list = scene["layers"][row].get("keyframes", [])
+            for marker_index, marker in enumerate(frame_list):
+                mx = x0 + marker["time"] / scene["duration"] * (x1 - x0)
+                if abs(event.x - mx) <= 10:
+                    self.selected_key_index = marker_index
+                    self._motion_drag = (row, marker_index)
+                    self.set_playhead(marker["time"])
+                    return
+        self._motion_drag = None
+        self.selected_key_index = None
+        moment = min(max((event.x - x0) / max(x1 - x0, 1), 0), 1) * scene["duration"]
+        self.set_playhead(moment)
+
+    def drag_motion_marker(self, event):
+        if self._motion_drag is None:
+            return
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        layer_index, marker_index = self._motion_drag
+        scene = self.scenes[scene_index]
+        width = max(260, self.motion_timeline.winfo_width())
+        x0, x1 = 142, width - 18
+        moment = min(max((event.x - x0) / max(x1 - x0, 1), 0), 1) * scene["duration"]
+        layer = scene["layers"][layer_index]
+        frames = layer["keyframes"]
+        minimum = frames[marker_index - 1]["time"] + .011 if marker_index else .011
+        maximum = frames[marker_index + 1]["time"] - .011 if marker_index + 1 < len(frames) else scene["duration"]
+        moment = max(minimum, min(maximum, round(moment, 3)))
+        if minimum > maximum:
+            return
+        try:
+            scene["layers"][layer_index] = move_keyframe(
+                layer, scene["duration"], marker_index, moment)
+        except (IndexError, ValueError):
+            return
+        self.set_playhead(moment)
+
+    def release_motion_marker(self, _event):
+        self._motion_drag = None
+
+    def selected_layer(self):
+        selected = self.layer_items.curselection()
+        return selected[0] if selected else None
+
+    def refresh_layers(self, index=None):
+        self.layer_items.delete(0, "end")
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        layers = self.scenes[scene_index].get("layers", [])
+        for layer in layers:
+            motion = "  • animated" if layer.get("keyframes") else ""
+            self.layer_items.insert("end", f"{layer.get('name', 'Character')}{motion}")
+        if layers:
+            position = min(index if index is not None else 0, len(layers) - 1)
+            self.layer_items.selection_set(position)
+
+    def add_layer(self):
+        scene_index = self.selected()
+        if scene_index is None:
+            messagebox.showwarning("Choose a scene", "Select a scene before adding a character.")
+            return
+        path = filedialog.askopenfilename(title="Choose a character or prop with transparency",
+                                          filetypes=[("PNG artwork", "*.png")])
+        if not path:
+            return
+        layer = {"id": uuid.uuid4().hex, "name": Path(path).stem, "image": str(Path(path).resolve()),
+                 "x": 0.3, "y": 0.55, "width": 0.32, "scale": 1.0,
+                 "rotation": 0.0, "opacity": 1.0, "keyframes": []}
+        layers = self.scenes[scene_index].setdefault("layers", [])
+        if len(layers) >= 32:
+            messagebox.showerror("Layer limit", "A scene supports up to 32 layers.")
+            return
+        layers.append(layer)
+        self.preview_end = False
+        self.refresh_layers(len(layers) - 1)
+        self.set_playhead(self.playhead)
+        self.status.set("Character added. Drag the selected layer inside the preview to position it.")
+
+    def remove_layer(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            return
+        self.scenes[scene_index]["layers"].pop(layer_index)
+        self.selected_key_index = None
+        self.refresh_layers()
+        self.set_playhead(self.playhead)
+
+    def animate_layer(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            self.status.set("Select a character layer to animate.")
+            return
+        scene = self.scenes[scene_index]
+        layer = scene["layers"][layer_index]
+        x, y = float(layer.get("x", 0.5)), float(layer.get("y", 0.5))
+        layer["keyframes"] = [
+            {"time": 0.0, "x": x, "y": y},
+            {"time": float(scene["duration"]), "x": min(x + 0.35, 2.0),
+             "y": y, "ease": "smooth"},
+        ]
+        self.selected_key_index = None
+        self.refresh_layers(layer_index)
+        self.set_playhead(scene["duration"])
+        self.status.set("Motion created. Click Play or scrub to preview the full movement.")
+
+    def clear_motion(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            return
+        self.scenes[scene_index]["layers"][layer_index]["keyframes"] = []
+        self.selected_key_index = None
+        self.refresh_layers(layer_index)
+        self.set_playhead(0)
+
+    def show_pose(self, end):
+        self.stop_playback()
+        index = self.selected()
+        if index is not None:
+            self.set_playhead(self.scenes[index]["duration"] if end else 0)
+
+    def drag_selected_layer(self, event):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None or self._stage_rect is None:
+            return
+        left, top, width, height = self._stage_rect
+        if not (left <= event.x <= left + width and top <= event.y <= top + height):
+            return
+        # Dragging edits only the current pose, not unrelated keyframes.
+        # Inverse camera crop converts screen points to stage coordinates.
+        scene = self.scenes[scene_index]
+        camera = camera_values(scene)
+        progress = self.playhead / max(scene["duration"], 0.001)
+        zoom = camera["zoom_start"] + (camera["zoom_end"] - camera["zoom_start"]) * progress
+        pan_x = camera["x_start"] + (camera["x_end"] - camera["x_start"]) * progress
+        pan_y = camera["y_start"] + (camera["y_end"] - camera["y_start"]) * progress
+        x = (event.x - left) / width / zoom + (1 - 1 / zoom) * pan_x
+        y = (event.y - top) / height / zoom + (1 - 1 / zoom) * pan_y
+        layer = scene["layers"][layer_index]
+        try:
+            updated = upsert_keyframe(layer, scene["duration"], round(self.playhead, 2),
+                                     {"x": x, "y": y}, self.ease_input.get())
+        except (ValueError, TypeError):
+            return
+        scene["layers"][layer_index] = updated
+        self.draw_preview()
+        self.draw_motion_timeline()
+        self.refresh_transform_fields()
 
     def draw_timeline(self):
         self.timeline.delete("all")
@@ -274,10 +775,12 @@ class StoryStudioApp:
         position = min(max((event.x - 8) / width, 0), 1) * total_duration(self.scenes)
         index = scene_at(self.scenes, position)
         if index is not None:
+            start = scene_ranges(self.scenes)[index][0]
             self.items.selection_clear(0, "end")
             self.items.selection_set(index)
             self.items.see(index)
             self.on_select()
+            self.set_playhead(position - start)
 
     def apply_camera(self):
         index = self.selected()
@@ -291,7 +794,7 @@ class StoryStudioApp:
             return
         self.scenes[index].update(values)
         self.status.set(f"Camera keyframes updated for scene {index + 1}.")
-        self.draw_timeline()
+        self.draw_preview()
 
     def apply_duration(self):
         index = self.selected()
@@ -304,13 +807,17 @@ class StoryStudioApp:
         except ValueError:
             messagebox.showerror("Invalid duration", "Use 0.5 to 120 seconds.")
             return
-        self.scenes[index]["duration"] = seconds
+        scene = self.scenes[index]
+        if scene.get("layers"):
+            scene["layers"] = retime_layers(scene["layers"], scene["duration"], seconds)
+        scene["duration"] = seconds
         self.refresh(index)
 
     def save(self):
         self.project_path.parent.mkdir(parents=True, exist_ok=True)
         self.project_path.write_text(
-            json.dumps({"version": 1, "scenes": self.scenes}, indent=2), encoding="utf-8"
+            json.dumps({"version": 1, "canvas": self.canvas_settings,
+                        "scenes": self.scenes}, indent=2), encoding="utf-8"
         )
         self.status.set(f"Saved {self.project_path}")
 
@@ -324,10 +831,19 @@ class StoryStudioApp:
             duration = float(scene["duration"])
             if not isinstance(image, str) or not math.isfinite(duration) or not 0.5 <= duration <= 120:
                 raise ValueError("Invalid scene data")
-            scenes.append({"image": image, "duration": duration, **camera_values(scene)})
+            scenes.append({**scene, "image": image, "duration": duration,
+                           **camera_values(scene),
+                           "layers": validated_layers(scene.get("layers", []), duration)})
+        self.stop_playback()
+        self.canvas_settings = validate_canvas(data.get("canvas"))
+        self.fit_mode.set(self.canvas_settings["fit"])
+        self.canvas_preset.set(next(
+            (name for name, size in PRESETS.items()
+             if size == (self.canvas_settings["width"], self.canvas_settings["height"])),
+            "Portrait 9:16"))
         self.scenes = scenes
         self.project_path = Path(path)
-        self.refresh()
+        self.refresh(0 if self.scenes else None)
         self.status.set(f"Opened {path}")
 
     def open_project(self):
@@ -354,15 +870,16 @@ class StoryStudioApp:
             return
         # Snapshot scene data before a background worker reads it.
         scenes = [dict(s) for s in self.scenes]
+        canvas_settings = dict(self.canvas_settings)
         self.render_button.state(["disabled"])
         self.status.set("Rendering video...")
         def report(message):
             self.root.after(0, lambda m=message: self.status.set(m))
         def worker():
             try:
-                output = render_scenes(scenes, path, report)
+                output = render_scenes(scenes, path, report, canvas=canvas_settings)
                 self.root.after(0, lambda: messagebox.showinfo("Export complete", str(output)))
-            except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
                 detail = exc.stderr if isinstance(exc, subprocess.CalledProcessError) else str(exc)
                 self.root.after(0, lambda d=detail: messagebox.showerror("Render failed", d[-1500:]))
             finally:
