@@ -101,7 +101,7 @@ def local_server(document=None):
                 self.send_header('Cache-Control', 'no-store')
                 self.end_headers()
                 self.wfile.write(payload)
-            elif path in ('/scene/index.html', '/scene/scene.js', '/scene/characters.js', '/vendor/lemo-lib.js'):
+            elif path in ('/scene/index.html', '/scene/scene.js', '/scene/characters.js', '/scene/cinematography.js', '/vendor/lemo-lib.js'):
                 super().do_GET()
             else:
                 self.send_error(404)
