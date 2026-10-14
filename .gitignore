@@ -32,3 +32,9 @@ Thumbs.db
 tools/
 
 tools/
+
+# Local builds and regression artifacts
+build/
+dist/
+artifacts/
+*.spec

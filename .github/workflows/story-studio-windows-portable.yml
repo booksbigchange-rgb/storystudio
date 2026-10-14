@@ -5,82 +5,130 @@ on:
     paths:
       - 'integrations/lemo-lite/**'
       - '.github/workflows/story-studio-windows-portable.yml'
+      - 'Open-StoryStudio.cmd'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: portable-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   windows-portable:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 35
     defaults:
       run:
         shell: pwsh
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/cache/pip
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/cache/pycache
+      STORYSTUDIO_TEMP: ${{ github.workspace }}/temp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install free build tools
+      - name: Install pinned tools from official PyPI and record provenance
         run: |
-          python -m pip install playwright==1.55.0 pyinstaller==6.16.0
-      - name: Syntax checks
+          New-Item -Force -ItemType Directory artifacts, logs, temp | Out-Null
+          python -m pip install --index-url https://pypi.org/simple --report artifacts/build-dependencies.json playwright==1.55.0 pyinstaller==6.16.0 Pillow==12.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+      - name: Syntax and unit regressions
         run: |
-          python -m py_compile integrations/lemo-lite/renderer.py integrations/lemo-lite/portable_app.py
+          python -m compileall -q integrations/lemo-lite
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax failed' }
           node --check integrations/lemo-lite/scene/scene.js
-          node --check integrations/lemo-lite/vendor/lemo-lib.js
-      - name: Download official FFmpeg Windows essentials archive
+          if ($LASTEXITCODE -ne 0) { throw 'Scene syntax failed' }
+          node --check integrations/lemo-lite/scene/characters.js
+          if ($LASTEXITCODE -ne 0) { throw 'Rig syntax failed' }
+          python -m unittest discover -s integrations/lemo-lite/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit regressions failed' }
+      - name: Download official FFmpeg and verify publisher checksum
         run: |
           $ErrorActionPreference='Stop'
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-unpacked"
-          $ff = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffmpeg.exe | Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
-          $fp = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffprobe.exe | Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
-          if (-not $ff -or -not $fp) { throw "FFmpeg binaries missing from official archive" }
+          $url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest "$url.sha256" -OutFile "$env:RUNNER_TEMP\ffmpeg.sha256"
+          $published=[regex]::Match((Get-Content "$env:RUNNER_TEMP\ffmpeg.sha256" -Raw),'[a-fA-F0-9]{64}').Value.ToUpper()
+          $actual=(Get-FileHash "$env:RUNNER_TEMP\ffmpeg.zip" -Algorithm SHA256).Hash
+          if ($published -ne $actual) { throw 'FFmpeg checksum mismatch' }
+          Expand-Archive "$env:RUNNER_TEMP\ffmpeg.zip" "$env:RUNNER_TEMP\ffmpeg-unpacked"
+          $ff=Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $fp=Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-unpacked" -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ff -or -not $fp) { throw 'FFmpeg binaries missing' }
+          "STORYSTUDIO_FFMPEG=$($ff.FullName)" >> $env:GITHUB_ENV
           $ff.FullName | Set-Content "$env:RUNNER_TEMP\ffmpeg-path.txt"
           $fp.FullName | Set-Content "$env:RUNNER_TEMP\ffprobe-path.txt"
-          & $ff.FullName -version | Select-Object -First 1
-      - name: Validate native Windows rendering
+          @{url=$url;sha256=$actual;version=(& $ff.FullName -version | Select-Object -First 1);publisher_checksum_verified=$true} | ConvertTo-Json | Set-Content artifacts/ffmpeg-provenance.json
+      - name: Create real offline Windows narration fixture
+        shell: powershell
         run: |
-          $env:STORYSTUDIO_FFMPEG = Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw
-          $env:STORYSTUDIO_FFMPEG = $env:STORYSTUDIO_FFMPEG.Trim()
-          $edge = @(
-            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-            "$( [Environment]::GetFolderPath('ProgramFilesX86') )\Microsoft\Edge\Application\msedge.exe"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if ($edge) { $env:STORYSTUDIO_CHROME = $edge }
-          python integrations/lemo-lite/renderer.py --duration 2 --width 640 --height 360 --fps 12 --output exports/windows-native-smoke.mp4
-      - name: Build Python-free GUI executable
+          Add-Type -AssemblyName System.Speech
+          $speaker=New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $speaker.SetOutputToWaveFile((Join-Path $env:GITHUB_WORKSPACE 'artifacts\narration.wav'))
+          $speaker.Speak('Pip finds a little star. Together, the friends begin a new adventure.')
+          $speaker.Dispose()
+      - name: Browser, character, audio and dual-format MP4 regressions
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name StoryStudio --collect-all playwright --distpath dist --workpath build\pyinstaller --specpath . --add-data "integrations/lemo-lite/scene;scene" --add-data "integrations/lemo-lite/vendor;vendor" integrations/lemo-lite/portable_app.py
-          if (-not (Test-Path "dist\StoryStudio\StoryStudio.exe")) { throw "Portable EXE missing" }
-          New-Item -Force -ItemType Directory "dist\StoryStudio\bin" | Out-Null
-          New-Item -Force -ItemType Directory "dist\StoryStudio\licenses" | Out-Null
-          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim()) "dist\StoryStudio\bin\ffmpeg.exe"
-          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffprobe-path.txt" -Raw).Trim()) "dist\StoryStudio\bin\ffprobe.exe"
-          Copy-Item "integrations\lemo-lite\PORTABLE-README.md" "dist\StoryStudio\README.md"
-          Copy-Item "integrations\lemo-lite\LICENSE-LEMO.md" "dist\StoryStudio\licenses\LICENSE-LEMO.md"
-          $ffdir = Split-Path -Parent ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim())
-          $releaseRoot = Split-Path -Parent $ffdir
-          Get-ChildItem $releaseRoot -Recurse -File -Include "LICENSE*","COPYING*" | Select-Object -First 8 | ForEach-Object {
-            Copy-Item $_.FullName ("dist\StoryStudio\licenses\" + $_.Name) -Force
+          python integrations/lemo-lite/tests/render_regression.py --output artifacts/source --audio artifacts/narration.wav
+          if ($LASTEXITCODE -ne 0) { throw 'Real rendering regressions failed' }
+      - name: Source Windows GUI regression
+        run: |
+          python integrations/lemo-lite/portable_app.py --gui-test --output artifacts/source-gui
+          if ($LASTEXITCODE -ne 0) { Get-Content logs/portable-self-test.log; throw 'GUI regression failed' }
+      - name: Build Python-free Windows executable
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name StoryStudio --collect-all playwright --hidden-import gui_regression --distpath dist --workpath build/pyinstaller --specpath . --add-data "integrations/lemo-lite/scene;scene" --add-data "integrations/lemo-lite/vendor;vendor" integrations/lemo-lite/portable_app.py
+          if ($LASTEXITCODE -ne 0) { throw 'Executable build failed' }
+          if (-not (Test-Path dist/StoryStudio/StoryStudio.exe)) { throw 'Portable EXE missing' }
+          New-Item -Force -ItemType Directory dist/StoryStudio/bin,dist/StoryStudio/licenses,dist/StoryStudio/provenance | Out-Null
+          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim()) dist/StoryStudio/bin/ffmpeg.exe
+          Copy-Item ((Get-Content "$env:RUNNER_TEMP\ffprobe-path.txt" -Raw).Trim()) dist/StoryStudio/bin/ffprobe.exe
+          Copy-Item integrations/lemo-lite/PORTABLE-README.md dist/StoryStudio/README.md
+          Copy-Item integrations/lemo-lite/LICENSE-LEMO.md dist/StoryStudio/licenses/LICENSE-LEMO.md
+          Copy-Item artifacts/ffmpeg-provenance.json,artifacts/build-dependencies.json dist/StoryStudio/provenance/
+          $ffdir=Split-Path -Parent ((Get-Content "$env:RUNNER_TEMP\ffmpeg-path.txt" -Raw).Trim())
+          $releaseRoot=Split-Path -Parent $ffdir
+          Get-ChildItem $releaseRoot -Recurse -File -Include 'LICENSE*','COPYING*' | ForEach-Object { Copy-Item $_.FullName (Join-Path 'dist/StoryStudio/licenses' $_.Name) -Force }
+      - name: Test compiled GUI and real exports in both orientations
+        run: |
+          $ErrorActionPreference='Stop'
+          # Remove the source-only override so the EXE must use its bundled FFmpeg.
+          Remove-Item Env:STORYSTUDIO_FFMPEG
+          $app=(Resolve-Path dist/StoryStudio/StoryStudio.exe).Path
+          function Run-App([string[]] $AppArgs) {
+            $proc=Start-Process -FilePath $app -ArgumentList $AppArgs -WindowStyle Hidden -PassThru
+            if (-not $proc.WaitForExit(180000)) { $proc.Kill(); throw 'Compiled app timed out' }
+            if ($proc.ExitCode -ne 0) {
+              Get-Content dist/StoryStudio/logs/portable-self-test.log -ErrorAction SilentlyContinue
+              throw "Compiled app failed: $($proc.ExitCode)"
+            }
           }
-      - name: Test compiled portable EXE end-to-end
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $app = (Resolve-Path "dist\StoryStudio\StoryStudio.exe").Path
-          $out = "$env:RUNNER_TEMP\portable-exe-smoke.mp4"
-          $proc = Start-Process -FilePath $app -ArgumentList @('--self-test','--output',('"' + $out + '"'),'--duration','2','--fps','12','--width','640','--height','360') -Wait -PassThru
-          if ($proc.ExitCode -ne 0) {
-            if (Test-Path "dist\StoryStudio\logs\portable-self-test.log") { Get-Content "dist\StoryStudio\logs\portable-self-test.log" }
-            throw "StoryStudio.exe failed smoke test (exit $($proc.ExitCode))"
+          Run-App @('--gui-test','--output',(Join-Path $env:GITHUB_WORKSPACE 'artifacts/compiled-gui'))
+          foreach ($format in @(@{name='landscape';width=640;height=360},@{name='portrait';width=360;height=640})) {
+            $out=Join-Path $env:GITHUB_WORKSPACE ('artifacts/compiled-'+$format.name+'.mp4')
+            Run-App @('--self-test','--output',$out,'--duration','2','--fps','12','--width',$format.width,'--height',$format.height,'--audio',(Join-Path $env:GITHUB_WORKSPACE 'artifacts/narration.wav'))
+            if (-not (Test-Path $out)) { throw 'Compiled export missing' }
+            & dist/StoryStudio/bin/ffmpeg.exe -v error -xerror -i $out -f null -
+            if ($LASTEXITCODE -ne 0) { throw 'Compiled MP4 decode failed' }
           }
-          if (-not (Test-Path $out)) { throw "Compiled StoryStudio.exe did not export MP4" }
-          & "dist\StoryStudio\bin\ffprobe.exe" -v error -show_entries format=duration -of default=noprint_wrappers=1 $out
-          Copy-Item $out "dist\StoryStudio\portable-exe-smoke.mp4"
-      - name: Upload Windows portable beta
+          Get-ChildItem dist/StoryStudio -Recurse -File | ForEach-Object {
+            [PSCustomObject]@{path=$_.FullName.Substring((Resolve-Path dist/StoryStudio).Path.Length+1);sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash}
+          } | ConvertTo-Json | Set-Content artifacts/portable-checksums.json
+      - name: Upload verification evidence (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-studio-validation
+          path: |
+            artifacts/
+            logs/
+            dist/StoryStudio/logs/
+          retention-days: 14
+      - name: Upload tested Windows portable beta
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: story-studio-windows-portable
           path: dist/StoryStudio/
-          retention-days: 7
+          retention-days: 14

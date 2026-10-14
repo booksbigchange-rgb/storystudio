@@ -88,3 +88,15 @@ Large AI image/video generation models and a new Blender installation were not a
 - GUI drawing/editing sessions are not yet tested.
 
 No API key, cloud credits or subscription is required for these verified functions.
+
+## StoryStudio 2.0 portable editor (feature branch beta)
+
+Use `Open-StoryStudio.cmd` in this source workspace. The existing D: Python
+installation needs Playwright 1.55.0 and Pillow; it uses the installed Chrome/Edge.
+For the Python-free executable, download the tested Windows portable artifact from
+the draft PR's Actions run and extract all files into a writable folder on D:.
+
+The editor supports multi-scene cartoons, three reusable characters, expression and
+motion presets, narration import, saved projects, and 16:9 / 9:16 exports.
+See [portable instructions](integrations/lemo-lite/PORTABLE-README.md) and
+[development audit](docs/story-studio-2-development-audit.md) for verified scope.

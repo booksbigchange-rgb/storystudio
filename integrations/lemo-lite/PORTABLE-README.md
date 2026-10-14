@@ -1,39 +1,66 @@
-# StoryStudio 2.0 — Portable Windows Beta
+# StoryStudio 2.0 — Portable Windows beta
 
-This is a **first portable prototype**, not a finished animation editor or official release.
+Extract every file into a writable folder on D:, such as `D:\StoryStudio\portable-beta`.
+Keep `_internal` and `bin` beside `StoryStudio.exe`. Open the executable to start.
+No Python, Node, Docker, model download, account or paid service is needed. Use an
+existing Edge or Chrome installation. The bundle includes FFmpeg and FFprobe.
 
-## Use on Windows 10/11
+## Create a cartoon
 
-1. Download the `story-studio-windows-portable` artifact from the successful Windows Portable workflow.
-2. Extract **every file** into a folder on D:, for example `D:\StoryStudio-Portable`. Keep `_internal` and `bin` beside `StoryStudio.exe`.
-3. Double-click `StoryStudio.exe`. Use **Open Live Preview** to play and scrub the fox-and-star cartoon in Edge/Chrome.
-4. Use **Export MP4** to choose a save location and quality.
-5. Logs, cache and exports remain in the portable folder wherever possible.
+1. Choose **Scene** to edit the caption, length and background. Apply scene edits.
+2. Choose **Character** for fox, rabbit or bear. Pick an expression and motion.
+   Position, size and speed can be adjusted; press Apply character edits.
+3. Add, duplicate, remove or reorder scenes in the left panel (up to 20 / 120 seconds).
+4. Click the timeline or scrub, then **Refresh frame**. **Play live preview** opens
+   a real-time browser player with the same project snapshot. Reopen after editing.
+5. Choose **Output**: landscape 16:9 or Shorts / TikTok 9:16; Standard 720p/24fps
+   or Draft 360p/12fps. Portrait is composed separately without stretching characters.
+6. Optionally import local narration or music. Audio starts at zero; short tracks
+   are padded and long tracks trimmed. The browser player is silent. Default
+   chimes are sound effects, not narration. Existing Kokoro WAV files work here.
+7. Save the JSON project. Ctrl+S saves, Ctrl+O opens, Ctrl+E exports.
+8. Export MP4. The app checks H.264/AAC, dimensions, FPS, frame count, audio duration
+   and full decoding before replacing a destination. Cancel preserves existing files.
 
-**No Docker, Python, Node, WSL, cloud AI credits or paid apps required for these offline functions.** The computer needs a compatible Microsoft Edge or Google Chrome installation. The bundle includes FFmpeg and FFprobe, but not a standalone browser.
+## Storage and compatibility
 
-Windows may warn about unsigned executables. Do not bypass a security warning without independently verifying the release source; this prototype is not code-signed.
+Exports, logs and temporary files live beside the portable executable. Project
+files and exports use your chosen save paths. Keep them on D:. Audio is referenced
+by path, not embedded: copy it along with the project when moving to another PC.
+Source projects use the version 2 JSON format; legacy Synfig/artwork files and
+projects from the separate 2D editor branch are not converted or overwritten.
 
-## Included
-- Portable executable with local GUI and browser preview.
-- Animation rendering from an original 10-second Lemo-style code-driven scene.
-- MP4 export with procedural sound effects and full-decode verification.
-- Local output folders and basic dependency diagnostics.
+One browser is used at a time and frames stream directly to FFmpeg (two encoder
+threads), with no image sequence accumulated in RAM or on disk. Use Draft for
+quick checks. A Windows CI pass is not a hardware performance guarantee.
 
-## Not included
-- Full Lemo 43-style gallery/engine, full visual editor, complex character rigs, AI scene generation, or multi-scene timeline.
-- Local Kokoro narration model, which remains in existing D:\StoryStudio.
-- Verified performance on the user's specific Windows Ryzen 3 laptop.
+## Scope
 
-## License and distribution
-- Selected motion helpers adapted from Lemo OpusCar: MIT; see `licenses/LICENSE-LEMO.md`.
-- FFmpeg binary: upstream https://ffmpeg.org/download.html ; binary source https://www.gyan.dev/ffmpeg/builds/ .
-- Playwright: Apache 2.0; PyInstaller: GPL plus exception; Python: PSF; all original scene artwork is generated in code.
-- Before **general public redistribution**, confirm the exact FFmpeg build license obligations and corresponding source-code availability. Retain all included notices.
-- Lemo demo movies and third-party demo artwork are not included.
+Three original procedural cutout rigs, four expressions, six motion presets and
+three backgrounds are included. This is a small cartoon editor, not a painterly
+rigging application or the complete Lemo style gallery. No imported-artwork rigging,
+per-limb keyframe editor, lip sync, transitions, soundtrack mixing or undo history
+is included. Save copies before exploratory edits. Narration generation remains
+in the existing local Kokoro tools; the portable bundle imports finished audio.
 
-## Troubleshooting
-- No browser: use a compatible installation of Edge or Chrome.
-- Export problem: inspect `logs/last-export-error.log`.
-- Memory tight: try the lower-resolution preview preset; close other video apps.
-- C: almost full: extract and export on D:.
+## Verification and troubleshooting
+
+The `story-studio-validation` workflow artifact contains actual MP4s, GUI captures,
+JSON checks, dependency provenance and bundle hashes. The portable ZIP is uploaded
+only after source and compiled GUI/render checks pass. Artifacts expire after 14 days.
+The beta executable is unsigned. Export failures are recorded in
+`logs/last-export-error.log`. For missing browser errors, install Edge/Chrome or set
+`STORYSTUDIO_CHROME` for the current launch only.
+
+## Notices
+
+Selected Lemo interpolation helpers: MIT, copyright LemoLab 2026; see
+`licenses/LICENSE-LEMO.md` and https://github.com/lemomo-ai/lemo-opuscar . Character
+art and animation code are original. No upstream demo footage/art/music is bundled.
+Playwright: Apache-2.0. Pillow: HPND. Python: PSF. PyInstaller: GPL with bootloader exception.
+Package metadata and distribution notices remain inside `_internal`.
+FFmpeg: GPL-enabled Gyan build, https://www.gyan.dev/ffmpeg/builds/ ; upstream
+https://ffmpeg.org/ . Publisher archive checksum, exact binary version and download
+URL are in `provenance/ffmpeg-provenance.json`; dependency URLs and hashes are in
+`provenance/build-dependencies.json`. Retain notices and corresponding source access
+when redistributing. This artifact is a development beta, not a signed public release.
