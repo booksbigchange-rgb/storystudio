@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine"))
-from animation import validated_layers, layer_state
+from animation import validated_layers, layer_state, retime_layers
 
 
 class AnimationTests(unittest.TestCase):
@@ -58,6 +58,11 @@ class AnimationTests(unittest.TestCase):
         layer = validated_layers([{"image": "old.png"}], 3)[0]
         self.assertEqual(layer["x"], 0.5)
         self.assertEqual(layer["keyframes"], [])
+
+    def test_retime_existing_motion(self):
+        layer = retime_layers([self.layer], 2, 4)[0]
+        self.assertEqual(layer["keyframes"][-1]["time"], 4)
+        self.assertAlmostEqual(layer_state(layer, 2)["x"], 0.5)
 
     def test_does_not_mutate_project(self):
         source = dict(self.layer)

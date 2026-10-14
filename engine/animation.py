@@ -69,6 +69,21 @@ def validated_layers(layers, duration):
     return normalized
 
 
+def retime_layers(layers, old_duration, new_duration):
+    """Preserve animation timing proportions when changing scene duration."""
+    old_duration = _number(old_duration, "old duration", 0.5, 120.0)
+    new_duration = _number(new_duration, "new duration", 0.5, 120.0)
+    result = []
+    for layer in validated_layers(layers, old_duration):
+        copy = dict(layer)
+        copy["keyframes"] = [
+            {**key, "time": key["time"] * new_duration / old_duration}
+            for key in layer["keyframes"]
+        ]
+        result.append(copy)
+    return validated_layers(result, new_duration)
+
+
 def layer_state(layer, seconds):
     """Interpolate a validated layer at an animation time in seconds."""
     if not math.isfinite(float(seconds)):

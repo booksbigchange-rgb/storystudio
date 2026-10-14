@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from timeline import scene_at, scene_ranges, total_duration
 from camera import DEFAULT as CAMERA_DEFAULT, camera_values, zoompan_filter
-from animation import validated_layers
+from animation import validated_layers, retime_layers
 from layer_render import render_layer_segment
 try:
     import tkinter as tk
@@ -453,7 +453,10 @@ class StoryStudioApp:
         except ValueError:
             messagebox.showerror("Invalid duration", "Use 0.5 to 120 seconds.")
             return
-        self.scenes[index]["duration"] = seconds
+        scene = self.scenes[index]
+        if scene.get("layers"):
+            scene["layers"] = retime_layers(scene["layers"], scene["duration"], seconds)
+        scene["duration"] = seconds
         self.refresh(index)
 
     def save(self):

@@ -33,6 +33,11 @@ def render_scene_frame(scene, seconds, width, height):
             sprite = source.convert("RGBA")
         target_width = max(1, round(width * state["width"] * state["scale"]))
         target_height = max(1, round(target_width * sprite.height / sprite.width))
+        # Prevent oversized source artwork from exhausting RAM on small PCs.
+        reduction = min(1.0, (2 * width) / target_width, (2 * height) / target_height)
+        if reduction < 1.0:
+            target_width = max(1, round(target_width * reduction))
+            target_height = max(1, round(target_height * reduction))
         sprite = sprite.resize((target_width, target_height), Image.Resampling.LANCZOS)
         if state["opacity"] != 1:
             alpha = sprite.getchannel("A").point(lambda a: round(a * state["opacity"]))

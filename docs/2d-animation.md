@@ -6,10 +6,10 @@ scenes, camera keyframes, project version 1 and FFmpeg exporter remain intact.
 ## New project field (optional)
 
 Existing scenes need no migration. For an animated scene, add transparent PNG
-sprite layers under \`layers\`. Position is the sprite center, normalized to
-stage width/height; \`width\` is the fraction of stage width used by the sprite.
+sprite layers under `layers`. Position is the sprite center, normalized to
+stage width/height; `width` is the fraction of stage width used by the sprite.
 
-\`\`\`json
+```json
 {
   "version": 1,
   "scenes": [{
@@ -27,7 +27,7 @@ stage width/height; \`width\` is the fraction of stage width used by the sprite.
     }]
   }]
 }
-\`\`\`
+```
 
 - Animated fields: x, y, scale, rotation (degrees), opacity.
 - Easing: linear, smooth or hold.
@@ -41,11 +41,11 @@ stage width/height; \`width\` is the fraction of stage width used by the sprite.
 
 ## Verification
 
-\`\`\`sh
+```sh
 python -m unittest discover -s tests -v
 python tests/render_integration.py
 python tests/render_layers_integration.py
-\`\`\`
+```
 
 The layered renderer requires Pillow and FFmpeg. CI installs Pillow before the
 layered integration test. Actual Windows GUI and high-resolution export still
@@ -53,3 +53,15 @@ require testing on the D: drive workstation.
 
 All legacy projects are read as version 1; layers are optional. Do not merge
 into main without desktop acceptance tests.
+
+## Desktop controls (first iteration)
+
+1. Open StoryStudio on the **2D branch** using the existing D: launcher.
+2. Import a background image and select the scene.
+3. Click **Add PNG** under character layers to import transparent character artwork.
+4. Select the layer and drag anywhere inside the preview to place its center.
+5. Click **Animate right** for a smooth rightward movement. Compare **Start frame** and **End frame**.
+6. Save the project, then export MP4 using the existing button.
+7. **Clear motion** removes that layer's motion. Changing scene duration retimes its existing keyframes proportionally.
+
+This is a first working control set, not a finished animation UI. Desktop mouse handling and full-resolution playback have not been tested on the user's Windows system. The current preview offers start/end frames rather than continuous playback. Existing silent video exports remain silent; narration mixing and advanced rigging come later.
