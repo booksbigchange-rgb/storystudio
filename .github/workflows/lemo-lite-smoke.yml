@@ -21,6 +21,10 @@ jobs:
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
+      - name: Install FFmpeg for Linux CI only
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Syntax checks
         run: |
           node --check integrations/lemo-lite/scene/scene.js
