@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 from timeline import scene_at, scene_ranges, total_duration
 from camera import DEFAULT as CAMERA_DEFAULT, camera_values, zoompan_filter
+from animation import validated_layers
+from layer_render import render_layer_segment
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -57,22 +59,25 @@ def render_scenes(scenes, output, progress=None):
                 raise ValueError("Scene duration must be between 0.5 and 120 seconds")
             frames = round(duration * FPS)
             segment = job / f"scene_{index:04d}.mp4"
-            # Scale/crop to fill a vertical frame; subtle movement without
-            # fabricating character animation from a single illustration.
-            vf = (
-                f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={WIDTH}:{HEIGHT},"
-                + zoompan_filter(scene, frames, WIDTH, HEIGHT, FPS)
-                + ",format=yuv420p"
-            )
-            cmd = [
-                binary, "-hide_banner", "-loglevel", "error", "-y",
-                "-loop", "1", "-i", str(image), "-vf", vf,
-                "-frames:v", str(frames), "-an",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                "-pix_fmt", "yuv420p", str(segment)
-            ]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            if scene.get("layers"):
+                render_layer_segment(scene, segment, binary, WIDTH, HEIGHT, FPS)
+            else:
+                # Scale/crop to fill a vertical frame; subtle movement without
+                # fabricating character animation from a single illustration.
+                vf = (
+                    f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+                    f"crop={WIDTH}:{HEIGHT},"
+                    + zoompan_filter(scene, frames, WIDTH, HEIGHT, FPS)
+                    + ",format=yuv420p"
+                )
+                cmd = [
+                    binary, "-hide_banner", "-loglevel", "error", "-y",
+                    "-loop", "1", "-i", str(image), "-vf", vf,
+                    "-frames:v", str(frames), "-an",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                    "-pix_fmt", "yuv420p", str(segment)
+                ]
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
             segments.append(segment)
             if progress:
                 progress(f"Rendered scene {index + 1}/{len(scenes)}")
@@ -324,7 +329,9 @@ class StoryStudioApp:
             duration = float(scene["duration"])
             if not isinstance(image, str) or not math.isfinite(duration) or not 0.5 <= duration <= 120:
                 raise ValueError("Invalid scene data")
-            scenes.append({"image": image, "duration": duration, **camera_values(scene)})
+            scenes.append({**scene, "image": image, "duration": duration,
+                           **camera_values(scene),
+                           "layers": validated_layers(scene.get("layers", []), duration)})
         self.scenes = scenes
         self.project_path = Path(path)
         self.refresh()
