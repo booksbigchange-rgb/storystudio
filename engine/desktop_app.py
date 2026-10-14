@@ -132,6 +132,14 @@ class StoryStudioApp:
         self.canvas_preset = tk.StringVar(value="Portrait 9:16")
         self.fit_mode = tk.StringVar(value="fill")
         self.time_readout = tk.StringVar(value="0.00 / 0.00 s")
+        self.selected_key_index = None
+        self._motion_drag = None
+        self.ease_input = tk.StringVar(value="smooth")
+        self.transform_inputs = {
+            name: tk.StringVar(value=str(default))
+            for name, default in (("x", 0.5), ("y", 0.5), ("scale", 1.0),
+                                  ("rotation", 0.0), ("opacity", 1.0))
+        }
         self.scenes = []
         self.project_path = PROJECTS / "desktop-mvp" / "story.json"
         self.status = tk.StringVar(value="Add illustrated scenes to begin.")
@@ -221,7 +229,32 @@ class StoryStudioApp:
         self.timeline.bind("<Button-1>", self.click_timeline)
         self.timeline_info = ttk.Label(frame, text="Total: 0.0s")
         self.timeline_info.pack(anchor="w")
-        # A second local timeline for animated layers is added separately.
+        editor_toolbar = ttk.Frame(frame)
+        editor_toolbar.pack(fill="x", pady=(7, 3))
+        ttk.Label(editor_toolbar, text="KEYFRAME EDITOR").pack(side="left", padx=(0, 8))
+        for field_name, variable in self.transform_inputs.items():
+            ttk.Label(editor_toolbar, text=field_name).pack(side="left", padx=(5, 2))
+            ttk.Entry(editor_toolbar, textvariable=variable, width=6).pack(side="left")
+        ttk.Label(editor_toolbar, text="easing").pack(side="left", padx=(8, 2))
+        ttk.Combobox(editor_toolbar, textvariable=self.ease_input,
+                     values=("smooth", "linear", "hold"), width=7,
+                     state="readonly").pack(side="left")
+        ttk.Button(editor_toolbar, text="Set keyframe", command=self.commit_keyframe).pack(side="left", padx=5)
+        ttk.Button(editor_toolbar, text="Delete keyframe", command=self.remove_keyframe).pack(side="left", padx=5)
+        ttk.Label(frame, text="LAYER KEYFRAMES — click to scrub, drag diamonds to retime").pack(anchor="w")
+        motion_frame = ttk.Frame(frame)
+        motion_frame.pack(fill="x", pady=(3, 8))
+        self.motion_timeline = tk.Canvas(motion_frame, height=122, bg="#20232b",
+                                          highlightthickness=0)
+        self.motion_timeline.pack(side="left", fill="both", expand=True)
+        self.motion_scroll = ttk.Scrollbar(motion_frame, orient="vertical",
+                                            command=self.motion_timeline.yview)
+        self.motion_scroll.pack(side="right", fill="y")
+        self.motion_timeline.configure(yscrollcommand=self.motion_scroll.set)
+        self.motion_timeline.bind("<Configure>", lambda _event: self.draw_motion_timeline())
+        self.motion_timeline.bind("<Button-1>", self.click_motion_timeline)
+        self.motion_timeline.bind("<B1-Motion>", self.drag_motion_marker)
+        self.motion_timeline.bind("<ButtonRelease-1>", self.release_motion_marker)
         actions = ttk.Frame(frame)
         actions.pack(fill="x")
         ttk.Button(actions, text="Save project", command=self.save).pack(side="left", padx=2)
@@ -241,6 +274,7 @@ class StoryStudioApp:
             self.items.insert("end", f"{n:02d}   {Path(scene['image']).name}   —   {scene['duration']:g} seconds")
         if index is not None and 0 <= index < len(self.scenes):
             self.items.selection_set(index)
+        self.selected_key_index = None
         self.refresh_layers()
         self.draw_timeline()
         self.set_playhead(0)
@@ -281,6 +315,7 @@ class StoryStudioApp:
             for key, value in camera_values(self.scenes[index]).items():
                 self.camera_inputs[key].set(str(value))
         self.preview_end = False
+        self.selected_key_index = None
         self.playhead = 0.0
         self.refresh_layers()
         self.draw_timeline()
@@ -405,16 +440,157 @@ class StoryStudioApp:
         self.status.set(f"Canvas set to {width}x{height}, {updated['fit']} mode.")
 
     def draw_motion_timeline(self):
-        # Populated by the editable-keyframe timeline milestone.
-        pass
+        if not hasattr(self, "motion_timeline"):
+            return
+        canvas = self.motion_timeline
+        canvas.delete("all")
+        scene_index = self.selected()
+        if scene_index is None:
+            canvas.create_text(14, 30, anchor="w", text="Select a scene to edit keyframes",
+                               fill="#e2e8f0")
+            return
+        scene = self.scenes[scene_index]
+        duration = float(scene["duration"])
+        width = max(260, canvas.winfo_width())
+        x0, x1 = 142, width - 18
+        rows = scene.get("layers", [])
+        full_height = max(124, 46 + 28 * len(rows))
+        canvas.configure(scrollregion=(0, 0, width, full_height))
+        canvas.create_rectangle(0, 0, width, full_height, fill="#20232b", outline="")
+        canvas.create_text(12, 12, anchor="w", text="ANIMATED LAYERS", fill="#f1f5f9")
+        for tick in range(5):
+            x = x0 + tick / 4 * (x1 - x0)
+            canvas.create_line(x, 23, x, full_height, fill="#334155")
+            canvas.create_text(x, 11, text=f"{duration * tick / 4:.1f}s",
+                               fill="#94a3b8", font=("Segoe UI", 8))
+        active = self.selected_layer()
+        for idx, layer in enumerate(rows):
+            y = 39 + idx * 28
+            fill = "#29334a" if idx == active else "#252b36"
+            canvas.create_rectangle(0, y - 12, width, y + 13, fill=fill, outline="")
+            canvas.create_text(12, y, anchor="w", text=layer.get("name", f"Layer {idx + 1}")[:16],
+                               fill="#e2e8f0", font=("Segoe UI", 9))
+            canvas.create_line(x0, y, x1, y, fill="#65748a", width=2)
+            for marker_index, marker in enumerate(layer.get("keyframes", [])):
+                mx = x0 + marker["time"] / duration * (x1 - x0)
+                is_active = (idx == active and marker_index == self.selected_key_index)
+                color = "#fbbf24" if is_active else "#67e8f9"
+                canvas.create_polygon(mx, y - 7, mx + 7, y, mx, y + 7, mx - 7, y,
+                                      fill=color, outline="#09121e", width=1)
+        line_x = x0 + self.playhead / duration * (x1 - x0)
+        canvas.create_line(line_x, 24, line_x, full_height, fill="#f97316", width=2)
+        canvas.create_polygon(line_x - 5, 23, line_x + 5, 23, line_x, 30,
+                              fill="#f97316", outline="")
 
     def refresh_transform_fields(self):
-        # Populated by the editable-keyframe timeline milestone.
-        pass
+        index, layer_index = self.selected(), self.selected_layer()
+        if index is None or layer_index is None:
+            return
+        layer = self.scenes[index].get("layers", [])[layer_index]
+        state = layer_state(validated_layers([layer], self.scenes[index]["duration"])[0],
+                            self.playhead)
+        for key, value in self.transform_inputs.items():
+            value.set(f"{state[key]:.3f}")
 
     def on_layer_select(self, _event=None):
+        self.selected_key_index = None
         self.refresh_transform_fields()
         self.draw_preview()
+        self.draw_motion_timeline()
+
+    def commit_keyframe(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None:
+            self.status.set("Select a character to set a keyframe.")
+            return
+        scene = self.scenes[scene_index]
+        try:
+            values = {name: float(field.get())
+                      for name, field in self.transform_inputs.items()}
+            moment = round(self.playhead, 2)
+            edited = upsert_keyframe(scene["layers"][layer_index], scene["duration"],
+                                     moment, values, self.ease_input.get())
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror("Keyframe", str(exc))
+            return
+        scene["layers"][layer_index] = edited
+        self.selected_key_index = next((idx for idx, key in
+            enumerate(edited.get("keyframes", []))
+            if abs(key["time"] - moment) < .001), None)
+        self.refresh_layers(layer_index)
+        self.set_playhead(moment)
+        self.status.set(f"Keyframe saved at {moment:.2f}s. Drag its diamond to retime.")
+
+    def remove_keyframe(self):
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is None or layer_index is None or self.selected_key_index is None:
+            self.status.set("Click a keyframe diamond to select it before deleting.")
+            return
+        scene = self.scenes[scene_index]
+        try:
+            scene["layers"][layer_index] = delete_keyframe(
+                scene["layers"][layer_index], scene["duration"], self.selected_key_index)
+        except (ValueError, IndexError) as exc:
+            messagebox.showerror("Keyframe", str(exc))
+            return
+        self.selected_key_index = None
+        self.refresh_layers(layer_index)
+        self.set_playhead(self.playhead)
+
+    def click_motion_timeline(self, event):
+        self.stop_playback()
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        scene = self.scenes[scene_index]
+        width = max(260, self.motion_timeline.winfo_width())
+        x0, x1 = 142, width - 18
+        y = self.motion_timeline.canvasy(event.y)
+        row = round((y - 39) / 28)
+        if 0 <= row < len(scene.get("layers", [])) and abs(y - (39 + row * 28)) <= 13:
+            self.layer_items.selection_clear(0, "end")
+            self.layer_items.selection_set(row)
+            self.layer_items.see(row)
+            frame_list = scene["layers"][row].get("keyframes", [])
+            for marker_index, marker in enumerate(frame_list):
+                mx = x0 + marker["time"] / scene["duration"] * (x1 - x0)
+                if abs(event.x - mx) <= 10:
+                    self.selected_key_index = marker_index
+                    self._motion_drag = (row, marker_index)
+                    self.set_playhead(marker["time"])
+                    return
+        self._motion_drag = None
+        self.selected_key_index = None
+        moment = min(max((event.x - x0) / max(x1 - x0, 1), 0), 1) * scene["duration"]
+        self.set_playhead(moment)
+
+    def drag_motion_marker(self, event):
+        if self._motion_drag is None:
+            return
+        scene_index = self.selected()
+        if scene_index is None:
+            return
+        layer_index, marker_index = self._motion_drag
+        scene = self.scenes[scene_index]
+        width = max(260, self.motion_timeline.winfo_width())
+        x0, x1 = 142, width - 18
+        moment = min(max((event.x - x0) / max(x1 - x0, 1), 0), 1) * scene["duration"]
+        layer = scene["layers"][layer_index]
+        frames = layer["keyframes"]
+        minimum = frames[marker_index - 1]["time"] + .011 if marker_index else .011
+        maximum = frames[marker_index + 1]["time"] - .011 if marker_index + 1 < len(frames) else scene["duration"]
+        moment = max(minimum, min(maximum, round(moment, 3)))
+        if minimum > maximum:
+            return
+        try:
+            scene["layers"][layer_index] = move_keyframe(
+                layer, scene["duration"], marker_index, moment)
+        except (IndexError, ValueError):
+            return
+        self.set_playhead(moment)
+
+    def release_motion_marker(self, _event):
+        self._motion_drag = None
 
     def selected_layer(self):
         selected = self.layer_items.curselection()
@@ -452,7 +628,7 @@ class StoryStudioApp:
         layers.append(layer)
         self.preview_end = False
         self.refresh_layers(len(layers) - 1)
-        self.draw_preview()
+        self.set_playhead(self.playhead)
         self.status.set("Character added. Drag the selected layer inside the preview to position it.")
 
     def remove_layer(self):
@@ -460,8 +636,9 @@ class StoryStudioApp:
         if scene_index is None or layer_index is None:
             return
         self.scenes[scene_index]["layers"].pop(layer_index)
+        self.selected_key_index = None
         self.refresh_layers()
-        self.draw_preview()
+        self.set_playhead(self.playhead)
 
     def animate_layer(self):
         scene_index, layer_index = self.selected(), self.selected_layer()
@@ -476,6 +653,7 @@ class StoryStudioApp:
             {"time": float(scene["duration"]), "x": min(x + 0.35, 2.0),
              "y": y, "ease": "smooth"},
         ]
+        self.selected_key_index = None
         self.refresh_layers(layer_index)
         self.set_playhead(scene["duration"])
         self.status.set("Motion created. Click Play or scrub to preview the full movement.")
@@ -485,6 +663,7 @@ class StoryStudioApp:
         if scene_index is None or layer_index is None:
             return
         self.scenes[scene_index]["layers"][layer_index]["keyframes"] = []
+        self.selected_key_index = None
         self.refresh_layers(layer_index)
         self.set_playhead(0)
 
@@ -501,20 +680,26 @@ class StoryStudioApp:
         left, top, width, height = self._stage_rect
         if not (left <= event.x <= left + width and top <= event.y <= top + height):
             return
-        # The layer is translated together with its keyframes. That preserves
-        # existing motion rather than silently discarding the animation.
-        layer = self.scenes[scene_index]["layers"][layer_index]
-        x = (event.x - left) / width
-        y = (event.y - top) / height
-        old_x, old_y = float(layer.get("x", 0.5)), float(layer.get("y", 0.5))
-        dx, dy = x - old_x, y - old_y
-        layer["x"], layer["y"] = x, y
-        for key in layer.get("keyframes", []):
-            if "x" in key:
-                key["x"] = max(-1.0, min(2.0, key["x"] + dx))
-            if "y" in key:
-                key["y"] = max(-1.0, min(2.0, key["y"] + dy))
+        # Dragging edits only the current pose, not unrelated keyframes.
+        # Inverse camera crop converts screen points to stage coordinates.
+        scene = self.scenes[scene_index]
+        camera = camera_values(scene)
+        progress = self.playhead / max(scene["duration"], 0.001)
+        zoom = camera["zoom_start"] + (camera["zoom_end"] - camera["zoom_start"]) * progress
+        pan_x = camera["x_start"] + (camera["x_end"] - camera["x_start"]) * progress
+        pan_y = camera["y_start"] + (camera["y_end"] - camera["y_start"]) * progress
+        x = (event.x - left) / width / zoom + (1 - 1 / zoom) * pan_x
+        y = (event.y - top) / height / zoom + (1 - 1 / zoom) * pan_y
+        layer = scene["layers"][layer_index]
+        try:
+            updated = upsert_keyframe(layer, scene["duration"], round(self.playhead, 2),
+                                     {"x": x, "y": y}, self.ease_input.get())
+        except (ValueError, TypeError):
+            return
+        scene["layers"][layer_index] = updated
         self.draw_preview()
+        self.draw_motion_timeline()
+        self.refresh_transform_fields()
 
     def draw_timeline(self):
         self.timeline.delete("all")
