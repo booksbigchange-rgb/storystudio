@@ -175,7 +175,7 @@ class StudioApp(tk.Tk):
         self.set_key_button.pack(side='left',fill='x',expand=True,padx=(0,4))
         self.remove_key_button=ttk.Button(poses,text='Remove ◆',style='Small.TButton',command=self.remove_keyframe)
         self.remove_key_button.pack(side='left',fill='x',expand=True)
-                ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
+        ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
         self.format_combo.pack(fill='x');self.format_combo.bind('<<ComboboxSelected>>',self.apply_output)
         ttk.Label(export_tab,text='Quality',foreground=MUTED).pack(anchor='w',pady=(12,3))
