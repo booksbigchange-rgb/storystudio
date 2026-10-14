@@ -41,6 +41,20 @@ def run(output):
             assert app.document['scenes'][1]['character']=='rabbit'
             assert app.document['scenes'][1]['expression']=='surprised'
             app.move_scene(-1);assert app.document['scenes'][0]['character']=='rabbit'
+            # Drive the pose controls through the real Tk widget callbacks.
+            app.time.set(.2);app.scrub()
+            app.fields['x'].set('.2');app.fields['size'].set('.7')
+            assert app.set_keyframe()
+            app.time.set(.8);app.scrub()
+            app.fields['x'].set('.7');app.fields['size'].set('1.2')
+            assert app.set_keyframe()
+            assert len(app.document['scenes'][0]['keyframes'])==2
+            app.time.set(.2);app.scrub()
+            assert app.remove_keyframe()
+            assert len(app.document['scenes'][0]['keyframes'])==1
+            app.fields['x'].set('.2');app.fields['size'].set('.7')
+            assert app.set_keyframe()
+            assert [f['t'] for f in app.document['scenes'][0]['keyframes']]==[.2,.8]
             app.tabs.select(2);app.update()
             app.format_var.set('Shorts / TikTok 9:16');app.format_combo.event_generate('<<ComboboxSelected>>');app.update()
             app.quality_var.set(list(project.QUALITIES)[1]);app.quality_combo.event_generate('<<ComboboxSelected>>');app.update()
@@ -74,6 +88,6 @@ def run(output):
                 assert any(arg.startswith('--app=http://127.0.0.1:') for arg in command)
                 app._close_server()
             assert not callback_errors,callback_errors
-            (output/'gui-results.json').write_text(json.dumps(dict(result='PASS',checks=['laptop geometry','widget edits','scene order','portrait preset','save/open','browser frame','GUI MP4 export','worker completion'],compiled=bool(__import__('sys').frozen) if hasattr(__import__('sys'),'frozen') else False),indent=2))
+            (output/'gui-results.json').write_text(json.dumps(dict(result='PASS',checks=['laptop geometry','widget edits','scene order','pose keyframe create/delete/save','portrait preset','save/open','browser frame','GUI MP4 export','worker completion'],compiled=bool(__import__('sys').frozen) if hasattr(__import__('sys'),'frozen') else False),indent=2))
         finally:
             app._close_server();app.destroy()
