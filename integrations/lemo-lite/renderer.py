@@ -9,6 +9,7 @@ import argparse
 import json
 import math
 import os
+import sys
 from pathlib import Path
 import shutil
 import struct
@@ -20,12 +21,23 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 
 BASE = Path(__file__).resolve().parent
-ROOT = BASE.parents[1]  # StoryStudio root
+# A PyInstaller onedir build places module data beneath _internal. The EXE,
+# exports and temporary files belong in the portable distribution directory.
+FROZEN = bool(getattr(sys, 'frozen', False))
+ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE.parents[1]
+
+def report(message):
+    if sys.stdout is not None:
+        print(message, flush=True)
+
 
 
 def find_ffmpeg():
     override = os.getenv('STORYSTUDIO_FFMPEG')
+    if override and not Path(override).is_file():
+        raise RuntimeError('STORYSTUDIO_FFMPEG not found: ' + override)
     paths = ([Path(override)] if override else []) + [
+        ROOT / 'bin' / 'ffmpeg.exe',
         ROOT / 'tools' / 'ffmpeg' / 'ffmpeg.exe',
         ROOT / 'tools' / 'ffmpeg' / 'bin' / 'ffmpeg.exe',
     ]
@@ -120,7 +132,9 @@ def export(args):
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.is_file() and not args.overwrite:
         raise FileExistsError(str(output) + ' already exists. Choose another path or use --overwrite.')
-    with tempfile.TemporaryDirectory(prefix='story-studio-', dir=os.getenv('STORYSTUDIO_TEMP') or None) as td:
+    temp_root = Path(os.getenv('STORYSTUDIO_TEMP') or ROOT / 'temp')
+    temp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='story-studio-', dir=str(temp_root)) as td:
         audio = Path(args.audio).resolve() if args.audio else Path(td) / 'chimes.wav'
         if args.audio and not audio.is_file():
             raise FileNotFoundError(audio)
@@ -150,7 +164,7 @@ def export(args):
                     image = page.screenshot(type='jpeg', quality=84, animations='disabled')
                     proc.stdin.write(image)
                     if i % args.fps == 0:
-                        print('Rendering %d/%gs' % (i / args.fps, args.duration), flush=True)
+                        report('Rendering %d/%gs' % (i / args.fps, args.duration))
             except Exception:
                 proc.kill()
                 raise
@@ -163,7 +177,7 @@ def export(args):
                 output.unlink(missing_ok=True)
                 raise RuntimeError('FFmpeg failed (code %s): %s' % (ret, msg[-2000:]))
     verify(output, args.duration, args.width, args.height, args.fps)
-    print('VERIFIED:', output)
+    report('VERIFIED: ' + str(output))
     return output
 
 
