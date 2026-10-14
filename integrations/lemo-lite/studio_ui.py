@@ -168,16 +168,14 @@ class StudioApp(tk.Tk):
             ttk.Label(params,text=label).grid(row=0,column=col,sticky='w')
             ttk.Entry(params,textvariable=self.fields[key],width=7).grid(row=1,column=col,padx=(0,6),pady=4)
         ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=(3,3))
-        ttk.Label(motion_tab,text='POSE KEYFRAMES  ·  position + size',foreground=GREEN,
+        ttk.Label(motion_tab,text='POSE KEYFRAMES  ·  select timeline time',foreground=GREEN,
                   font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(3,2))
         poses=ttk.Frame(motion_tab);poses.pack(fill='x')
         self.set_key_button=ttk.Button(poses,text='◆ Set pose',style='Small.TButton',command=self.set_keyframe)
         self.set_key_button.pack(side='left',fill='x',expand=True,padx=(0,4))
         self.remove_key_button=ttk.Button(poses,text='Remove ◆',style='Small.TButton',command=self.remove_keyframe)
         self.remove_key_button.pack(side='left',fill='x',expand=True)
-        ttk.Label(motion_tab,text='Timeline → Position / Size → Set pose. Diamonds mark saved poses.',
-                  foreground=MUTED,wraplength=240).pack(anchor='w',pady=(3,0))
-        ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
+                ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
         self.format_combo.pack(fill='x');self.format_combo.bind('<<ComboboxSelected>>',self.apply_output)
         ttk.Label(export_tab,text='Quality',foreground=MUTED).pack(anchor='w',pady=(12,3))
