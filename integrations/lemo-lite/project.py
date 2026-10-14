@@ -12,13 +12,14 @@ CHARACTERS = ('fox', 'rabbit', 'bear')
 EXPRESSIONS = ('happy', 'curious', 'sad', 'surprised')
 ACTIONS = ('story', 'idle', 'wave', 'walk', 'jump', 'talk')
 BACKGROUNDS = ('meadow', 'sunset', 'night')
+CAMERAS = ('still', 'push-in', 'pull-back', 'pan-left', 'pan-right')
 FORMATS = {'Landscape 16:9': (1280, 720), 'Shorts / TikTok 9:16': (720, 1280)}
 QUALITIES = {'Standard · 720p / 24 fps': (1, 24), 'Draft · 360p / 12 fps': (.5, 12)}
 
 
 def new_scene():
     return dict(title='A little magic!', duration=10.0, character='fox',
-                expression='happy', action='story', background='meadow',
+                expression='happy', action='story', background='meadow', camera='still',
                 x=.4, size=1.0, speed=1.0)
 
 
@@ -57,6 +58,8 @@ def validate(data):
                                ('action', ACTIONS), ('background', BACKGROUNDS)]:
             if scene.get(field) not in options:
                 raise ValueError(f'Unsupported {field}')
+        if scene.get('camera', 'still') not in CAMERAS:
+            raise ValueError('Unsupported camera move')
         for field, low, high in [('duration', 1, 30), ('x', .2, .7),
                                  ('size', .6, 1.25), ('speed', .5, 2)]:
             scene[field] = number(scene.get(field), field, low, high)

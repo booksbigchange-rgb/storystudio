@@ -44,6 +44,14 @@ def run(output):
             app.add_button.invoke();assert len(app.document['scenes'])==2
             app.duplicate_button.invoke();assert len(app.document['scenes'])==3
             app.delete_button.invoke();assert len(app.document['scenes'])==2
+            # Cinematic direction is user-selectable and persists with the scene.
+            app.tabs.select(0);app.update()
+            assert app.camera_combo.winfo_ismapped(),'Camera control hidden'
+            assert app.camera_combo.winfo_rooty()+app.camera_combo.winfo_height()<=app.winfo_rooty()+app.winfo_height()-25, 'Camera control clipped'
+            app.fields['camera'].set('push-in')
+            app.camera_combo.event_generate('<<ComboboxSelected>>');app.update()
+            assert app.document['scenes'][app.selected()]['camera']=='push-in'
+            app.tabs.select(1);app.update()
             app.fields['character'].set('rabbit');app.character_combo.event_generate('<<ComboboxSelected>>');app.update()
             app.fields['expression'].set('surprised');app.expression_combo.event_generate('<<ComboboxSelected>>');app.update()
             app.fields['action'].set('wave');app.action_combo.event_generate('<<ComboboxSelected>>');app.update()
@@ -97,6 +105,6 @@ def run(output):
                 assert any(arg.startswith('--app=http://127.0.0.1:') for arg in command)
                 app._close_server()
             assert not callback_errors,callback_errors
-            (output/'gui-results.json').write_text(json.dumps(dict(result='PASS',checks=['laptop geometry','widget edits','scene order','pose keyframe create/delete/save','portrait preset','save/open','browser frame','GUI MP4 export','worker completion'],compiled=bool(__import__('sys').frozen) if hasattr(__import__('sys'),'frozen') else False),indent=2))
+            (output/'gui-results.json').write_text(json.dumps(dict(result='PASS',checks=['laptop geometry','cinematic camera selector','widget edits','scene order','pose keyframe create/delete/save','portrait preset','save/open','browser frame','GUI MP4 export','worker completion'],compiled=bool(__import__('sys').frozen) if hasattr(__import__('sys'),'frozen') else False),indent=2))
         finally:
             app._close_server();app.destroy()

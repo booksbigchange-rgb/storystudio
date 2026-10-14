@@ -1,5 +1,6 @@
 import {clamp,lerp,ss,seg,TAU,hash} from '../vendor/lemo-lib.js';
 import {drawCharacter} from './characters.js';
+import {cameraAt,applyCamera,drawAtmosphere} from './cinematography.js';
 const canvas=document.getElementById('film'), ctx=canvas.getContext('2d',{alpha:false});
 const capture=new URLSearchParams(location.search).has('capture');
 if(capture)document.body.classList.add('capture');
@@ -44,11 +45,14 @@ export function poseAtTime(scene,t){
 }
 function picture(scene,t,W,H){
   const portrait=H>W;
+  const camera=cameraAt(scene,t,W,H);
+  ctx.save();
+  if((scene.camera||'still')!=='still')applyCamera(ctx,camera,W,H);
   const colors={meadow:['#8cdeed','#e1f5d0','#75b896','#98cf78'],sunset:['#efb0b1','#ffe0aa','#bf91a3','#d5b18c'],night:['#293e68','#647fa2','#526b80','#749a91']}[scene.background];
   const sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,colors[0]);sky.addColorStop(1,colors[1]);ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
   ellipse(W*.82,H*.16,58,58,scene.background==='night'?'#fff9db':'#fff1b7');
-  for(let i=0;i<4;i++){const x=(W*(i*.28+.08)+t*(i+1)*2)%(W+100)-40,y=H*(.15+(i%2)*.11);ellipse(x,y,75,22,'#ffffff85');ellipse(x+24,y-13,40,30,'#ffffff85')}
-  ellipse(W*.24,H*.85,W*.75,H*.37,colors[2]);ellipse(W*.9,H*.94,W*.8,H*.43,colors[3]);
+  for(let i=0;i<4;i++){const x=(W*(i*.28+.08)+t*(i+1)*2-camera.x*.4)%(W+100)-40,y=H*(.15+(i%2)*.11);ellipse(x,y,75,22,'#ffffff85');ellipse(x+24,y-13,40,30,'#ffffff85')}
+  ellipse(W*.24-camera.x*.2,H*.85,W*.75,H*.37,colors[2]);ellipse(W*.9-camera.x*.1,H*.94,W*.8,H*.43,colors[3]);
   for(let i=0;i<22;i++){const x=hash(i+1)*W,y=H*(.7+hash(i+30)*.3);ellipse(x,y,4,7,'#fff0b7')}
   const phase=t/scene.duration*10;
   const animated=poseAtTime(scene,t);
@@ -64,9 +68,11 @@ function picture(scene,t,W,H){
   const sy=(portrait?H*.29:H*.33)+Math.sin(t*3)*14;
   ellipse(sx,sy,65,65,'#fff4bb42');star(sx,sy,48,'#ffe16c');star(sx,sy-2,36,'#fff3a0');
   ellipse(sx-10,sy-4,3,5,'#735f45');ellipse(sx+10,sy-4,3,5,'#735f45');
+  ctx.restore();
+  drawAtmosphere(ctx,scene,t,W,H);
   if(scene.title && (scene.action!=='story'||phase>=7))caption(scene.title,W,H,portrait);
   // Exposed geometry is useful for automated framing checks; no random animation state.
-  window.frameInfo={character:scene.character,x:x+walk,y:y-jump,scale,portrait,scene:window.activeScene};
+  window.frameInfo={character:scene.character,x:x+walk,y:y-jump,scale,portrait,scene:window.activeScene,camera:scene.camera||'still',cameraPose:camera};
 }
 function render(t){
   t=clamp(t,0,window.DUR);

@@ -157,9 +157,9 @@ class StudioApp(tk.Tk):
         self.title_entry=field(scene_tab,'Caption · up to 60 characters','title')
         field(scene_tab,'Length · 1–30 seconds','duration')
         field(scene_tab,'Backdrop','background',project.BACKGROUNDS)
+        self.camera_combo=field(scene_tab,'Camera direction','camera',project.CAMERAS)
         self.apply_button=ttk.Button(scene_tab,text='Apply scene edits',style='Accent.TButton',command=self.apply_scene)
-        self.apply_button.pack(fill='x',pady=14)
-        ttk.Label(scene_tab,text='Add scenes to tell a longer story.\nSave a project to edit it again later.',foreground=MUTED,wraplength=240).pack(anchor='w')
+        self.apply_button.pack(fill='x',pady=(8,4))
         self.character_combo=field(motion_tab,'Character','character',project.CHARACTERS)
         self.expression_combo=field(motion_tab,'Expression','expression',project.EXPRESSIONS)
         self.action_combo=field(motion_tab,'Motion','action',project.ACTIONS)
@@ -212,7 +212,7 @@ class StudioApp(tk.Tk):
             self.scene_list.insert('end',f"  {i+1:02d}  {scene['character'].title()}  ·  {scene['duration']:g}s")
         index=max(0,min(index,len(self.document['scenes'])-1))
         self.scene_list.selection_set(index);self.scene_list.see(index)
-        for key,var in self.fields.items():var.set(str(self.document['scenes'][index][key]))
+        for key,var in self.fields.items():var.set(str(self.document['scenes'][index].get(key,project.new_scene()[key])))
         self.format_var.set(self.document['format']);self.quality_var.set(self.document['quality'])
         audio=self.document['audio'];self.audio_label.set(Path(audio).name if audio else 'Original chimes · no narration selected')
         self.scrubber.configure(to=project.total_duration(self.document))
@@ -222,7 +222,7 @@ class StudioApp(tk.Tk):
 
     def select_scene(self,_=None):
         index=self.selected()
-        for key,var in self.fields.items():var.set(str(self.document['scenes'][index][key]))
+        for key,var in self.fields.items():var.set(str(self.document['scenes'][index].get(key,project.new_scene()[key])))
         self.time.set(sum(s['duration'] for s in self.document['scenes'][:index]))
         self.scrub();self.draw_timeline()
 

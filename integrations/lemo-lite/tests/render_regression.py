@@ -66,6 +66,29 @@ def run(output,audio=None):
         page.evaluate('window.render(.05)')
         assert image_before==page.screenshot(),'Keyframe seeking became nondeterministic'
         checks.append('reversible deterministic position and scale keyframes')
+        # Lemo-inspired film direction must alter real pixels, be deterministic
+        # when seeking, and leave the original fixed-camera look available.
+        directed=copy.deepcopy(doc)
+        directed['scenes'][0].update(action='idle',camera='push-in')
+        page.evaluate('(doc)=>window.setProject(doc)',directed)
+        page.evaluate('window.render(.05)')
+        opening=page.screenshot()
+        camera0=page.evaluate('window.frameInfo.cameraPose')
+        page.evaluate('window.render(.95)')
+        closing=page.screenshot()
+        camera1=page.evaluate('window.frameInfo.cameraPose')
+        assert camera1['zoom']>camera0['zoom']+.08,'Push-in camera did not zoom'
+        assert opening!=closing,'Cinematic camera produced frozen frames'
+        page.evaluate('window.render(.05)')
+        assert opening==page.screenshot(),'Camera seeking was nondeterministic'
+        looks=set()
+        for move in project.CAMERAS:
+            directed['scenes'][0]['camera']=move
+            page.evaluate('(doc)=>window.setProject(doc)',directed)
+            page.evaluate('window.render(.3)')
+            looks.add(hashlib.sha256(page.screenshot()).hexdigest())
+        assert len(looks)==len(project.CAMERAS),'Camera presets must have distinct visual effects'
+        checks.extend(['camera zoom/pan presets','deterministic camera seeking','distinct camera compositions'])
         # Portrait layout is deliberately re-composed, not stretched landscape.
         portrait=copy.deepcopy(doc);portrait['format']='Shorts / TikTok 9:16'
         page.set_viewport_size(dict(width=360,height=640));page.evaluate('(doc)=>window.setProject(doc)',portrait);page.evaluate('window.render(.5)')

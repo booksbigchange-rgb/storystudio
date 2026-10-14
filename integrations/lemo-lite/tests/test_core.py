@@ -77,6 +77,22 @@ class ProjectTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     project.validate(doc)
 
+    def test_camera_direction_legacy_and_save_roundtrip(self):
+        old=project.new_project()
+        old['scenes'][0].pop('camera')
+        self.assertNotIn('camera',project.validate(old)['scenes'][0])
+        for camera in project.CAMERAS:
+            doc=copy.deepcopy(old)
+            doc['scenes'][0]['camera']=camera
+            self.assertEqual(project.validate(doc)['scenes'][0]['camera'],camera)
+            with tempfile.TemporaryDirectory() as td:
+                path=Path(td)/'film.json'
+                project.save(doc,path)
+                self.assertEqual(project.load(path)['scenes'][0]['camera'],camera)
+        doc=copy.deepcopy(old)
+        doc['scenes'][0]['camera']='fast-orbit'
+        with self.assertRaises(ValueError):project.validate(doc)
+
     def test_round_trip_relative_audio(self):
         with tempfile.TemporaryDirectory() as td:
             folder=Path(td);audio=folder/'voice.wav';audio.write_bytes(b'original')
