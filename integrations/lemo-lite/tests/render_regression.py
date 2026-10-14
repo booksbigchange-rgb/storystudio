@@ -48,6 +48,24 @@ def run(output,audio=None):
                 page.evaluate('(doc)=>window.setProject(doc)',variant);page.evaluate('window.render(.5)')
                 hashes.add(hashlib.sha256(page.screenshot()).hexdigest())
             assert len(hashes)==len(values),f'{field} controls have no distinct effect'
+        # Poses must interpolate smoothly, deterministically, and actually
+        # move the character in the rendered canvas (not just update JSON).
+        animated=copy.deepcopy(doc)
+        animated['scenes'][0].update(action='idle',keyframes=[
+            dict(t=0,x=.2,size=.7),dict(t=1,x=.7,size=1.2)])
+        page.evaluate('(doc)=>window.setProject(doc)',animated)
+        page.evaluate('window.render(.05)')
+        before=page.evaluate('window.frameInfo')
+        image_before=page.screenshot()
+        page.evaluate('window.render(.95)')
+        after=page.evaluate('window.frameInfo')
+        image_after=page.screenshot()
+        assert after['x']>before['x']+200,'Keyframe did not move character'
+        assert after['scale']>before['scale']+.3,'Keyframe did not change character size'
+        assert image_before!=image_after,'Position/size keyframes did not affect pixels'
+        page.evaluate('window.render(.05)')
+        assert image_before==page.screenshot(),'Keyframe seeking became nondeterministic'
+        checks.append('reversible deterministic position and scale keyframes')
         # Portrait layout is deliberately re-composed, not stretched landscape.
         portrait=copy.deepcopy(doc);portrait['format']='Shorts / TikTok 9:16'
         page.set_viewport_size(dict(width=360,height=640));page.evaluate('(doc)=>window.setProject(doc)',portrait);page.evaluate('window.render(.5)')
