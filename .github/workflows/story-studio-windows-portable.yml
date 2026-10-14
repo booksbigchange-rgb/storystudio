@@ -1,7 +1,7 @@
 name: StoryStudio Windows portable prototype
 on:
   push:
-    branches: [feature/story-studio-portable-windows, feature/story-studio-keyframes]
+    branches: [feature/story-studio-portable-windows, feature/story-studio-keyframes, feature/story-studio-cinematic-camera]
     paths:
       - 'integrations/lemo-lite/**'
       - '.github/workflows/story-studio-windows-portable.yml'
@@ -41,6 +41,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Scene syntax failed' }
           node --check integrations/lemo-lite/scene/characters.js
           if ($LASTEXITCODE -ne 0) { throw 'Rig syntax failed' }
+          node --check integrations/lemo-lite/scene/cinematography.js
+          if ($LASTEXITCODE -ne 0) { throw 'Camera syntax failed' }
           python -m unittest discover -s integrations/lemo-lite/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'Unit regressions failed' }
       - name: Download official FFmpeg and verify publisher checksum
@@ -119,7 +121,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: story-studio-keyframes-validation
+          name: story-studio-cinematic-validation
           path: |
             artifacts/
             logs/
@@ -129,6 +131,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: story-studio-keyframes-windows-portable
+          name: story-studio-cinematic-windows-portable
           path: dist/StoryStudio/
           retention-days: 14
