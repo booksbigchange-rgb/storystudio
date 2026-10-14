@@ -168,7 +168,16 @@ class StudioApp(tk.Tk):
             ttk.Label(params,text=label).grid(row=0,column=col,sticky='w')
             ttk.Entry(params,textvariable=self.fields[key],width=7).grid(row=1,column=col,padx=(0,6),pady=4)
         ttk.Label(motion_tab,text='Position .2–.7 · Size .6–1.25\nSpeed .5–2 · Blink is automatic',foreground=MUTED,wraplength=240).pack(anchor='w',pady=6)
-        ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=8)
+        ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=(8,4))
+        ttk.Label(motion_tab,text='POSE KEYFRAMES  ·  position + size',foreground=GREEN,
+                  font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(6,2))
+        poses=ttk.Frame(motion_tab);poses.pack(fill='x')
+        self.set_key_button=ttk.Button(poses,text='◆ Set pose',style='Small.TButton',command=self.set_keyframe)
+        self.set_key_button.pack(side='left',fill='x',expand=True,padx=(0,4))
+        self.remove_key_button=ttk.Button(poses,text='Remove ◆',style='Small.TButton',command=self.remove_keyframe)
+        self.remove_key_button.pack(side='left',fill='x',expand=True)
+        ttk.Label(motion_tab,text='Move playhead in selected scene; enter Position + Size, then Set pose. Diamonds show keys.',
+                  foreground=MUTED,wraplength=240).pack(anchor='w',pady=(5,0))
         ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
         self.format_combo.pack(fill='x');self.format_combo.bind('<<ComboboxSelected>>',self.apply_output)
@@ -222,7 +231,8 @@ class StudioApp(tk.Tk):
 
     def apply_scene(self):
         index=self.selected();doc=copy.deepcopy(self.document)
-        scene={key:var.get() for key,var in self.fields.items()}
+        # Preserve optional keyframe tracks when editing ordinary scene fields.
+        scene={**doc['scenes'][index],**{key:var.get() for key,var in self.fields.items()}}
         try:
             for key in ('duration','x','size','speed'):scene[key]=float(scene[key])
             doc['scenes'][index]=scene
@@ -230,6 +240,51 @@ class StudioApp(tk.Tk):
         except (ValueError,TypeError) as exc:
             self.status.set(str(exc));return False
         self.document=doc;self.mark_dirty();self.refresh(index);self.request_preview()
+        return True
+
+    def _selected_scene_time(self):
+        index=self.selected()
+        start=sum(s['duration'] for s in self.document['scenes'][:index])
+        duration=self.document['scenes'][index]['duration']
+        local=self.time.get()-start
+        if local < -.001 or local > duration+.001:
+            self.status.set('Click inside the selected scene on the timeline to place a pose.')
+            return None
+        return round(min(duration,max(0,local)),2)
+
+    def set_keyframe(self):
+        # Apply current position/size fields first, without discarding old keys.
+        if not self.apply_scene():return False
+        moment=self._selected_scene_time()
+        if moment is None:return False
+        doc=copy.deepcopy(self.document);index=self.selected()
+        scene=doc['scenes'][index]
+        frame=dict(t=moment,x=scene['x'],size=scene['size'])
+        frames=[item for item in scene.get('keyframes',[]) if abs(item['t']-moment)>.04]
+        frames.append(frame);frames.sort(key=lambda item:item['t'])
+        scene['keyframes']=frames
+        try:doc=project.validate(doc)
+        except ValueError as exc:self.status.set(str(exc));return False
+        self.document=doc;self.mark_dirty();self.draw_timeline();self.request_preview()
+        self.status.set(f'Keyframe saved at {moment:g}s in scene {index+1}.')
+        return True
+
+    def remove_keyframe(self):
+        moment=self._selected_scene_time()
+        if moment is None:return False
+        doc=copy.deepcopy(self.document);index=self.selected()
+        scene=doc['scenes'][index]
+        frames=scene.get('keyframes',[])
+        matches=[i for i,item in enumerate(frames) if abs(item['t']-moment)<=.15]
+        if not matches:
+            self.status.set('Move the playhead onto a diamond to remove that pose.')
+            return False
+        target=min(matches,key=lambda i:abs(frames[i]['t']-moment))
+        frames.pop(target)
+        if not frames:scene.pop('keyframes',None)
+        self.document=project.validate(doc)
+        self.mark_dirty();self.draw_timeline();self.request_preview()
+        self.status.set(f'Keyframe removed near {moment:g}s.')
         return True
 
     def apply_output(self,_=None):
@@ -270,6 +325,10 @@ class StudioApp(tk.Tk):
             end=start+scene['duration'];x1=start/total*width;x2=end/total*width
             self.timeline.create_rectangle(x1+2,3,x2-2,43,fill=GREEN if i==self.selected() else '#abcbbb',outline='')
             if x2-x1>60:self.timeline.create_text((x1+x2)/2,23,text=f"{i+1:02d} · {scene['duration']:g}s",fill=WHITE if i==self.selected() else INK)
+            for key in scene.get('keyframes',[]):
+                px=(start+key['t'])/total*width
+                self.timeline.create_polygon(px,30,px+6,36,px,42,px-6,36,
+                                             fill='#ffe6a5',outline='#6b552a',width=1)
             start=end
         x=self.time.get()/total*width;self.timeline.create_line(x,0,x,46,fill='#e8ab50',width=3)
 
