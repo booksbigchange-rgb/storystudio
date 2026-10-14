@@ -94,7 +94,8 @@ def save(doc, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     if doc['audio']:
         try:
-            doc['audio'] = os.path.relpath(doc['audio'], path.parent)
+            # Windows may supply an 8.3 TEMP path; normalize both sides first.
+            doc['audio'] = os.path.relpath(Path(doc['audio']).resolve(), path.parent)
         except ValueError:
             pass
     fd, tmp = tempfile.mkstemp(prefix='.story-', suffix='.json', dir=path.parent)

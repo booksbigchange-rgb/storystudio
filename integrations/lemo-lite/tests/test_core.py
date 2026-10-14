@@ -49,7 +49,8 @@ class ProjectTests(unittest.TestCase):
             doc=project.new_project();doc['audio']=str(audio);doc['scenes'][0]['title']='A fox & a star!'
             path=folder/'story.json';project.save(doc,path)
             self.assertEqual(json.loads(path.read_text())['audio'],'voice.wav')
-            self.assertEqual(project.load(path),project.validate(doc))
+            expected=project.validate(doc);expected['audio']=str(audio.resolve())
+            self.assertEqual(project.load(path),expected)
             self.assertEqual(audio.read_bytes(),b'original')
 
     def test_failed_save_preserves_original(self):
