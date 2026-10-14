@@ -145,7 +145,7 @@ class StudioApp(tk.Tk):
         scene_tab=ttk.Frame(self.tabs,padding=10);motion_tab=ttk.Frame(self.tabs,padding=10);export_tab=ttk.Frame(self.tabs,padding=10)
         self.tabs.add(scene_tab,text='Scene');self.tabs.add(motion_tab,text='Character');self.tabs.add(export_tab,text='Output')
         def field(parent,label,key,options=None):
-            ttk.Label(parent,text=label,foreground=MUTED).pack(anchor='w',pady=(8,3))
+            ttk.Label(parent,text=label,foreground=MUTED).pack(anchor='w',pady=(4,2))
             if options:
                 widget=ttk.Combobox(parent,textvariable=self.fields[key],values=options,state='readonly')
                 widget.bind('<<ComboboxSelected>>',lambda _:self.apply_scene())
@@ -163,21 +163,20 @@ class StudioApp(tk.Tk):
         self.character_combo=field(motion_tab,'Character','character',project.CHARACTERS)
         self.expression_combo=field(motion_tab,'Expression','expression',project.EXPRESSIONS)
         self.action_combo=field(motion_tab,'Motion','action',project.ACTIONS)
-        params=ttk.Frame(motion_tab);params.pack(fill='x',pady=(10,0))
+        params=ttk.Frame(motion_tab);params.pack(fill='x',pady=(6,0))
         for col,(key,label) in enumerate([('x','Position'),('size','Size'),('speed','Speed')]):
             ttk.Label(params,text=label).grid(row=0,column=col,sticky='w')
             ttk.Entry(params,textvariable=self.fields[key],width=7).grid(row=1,column=col,padx=(0,6),pady=4)
-        ttk.Label(motion_tab,text='Position .2–.7 · Size .6–1.25\nSpeed .5–2 · Blink is automatic',foreground=MUTED,wraplength=240).pack(anchor='w',pady=6)
-        ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=(8,4))
+        ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=(3,3))
         ttk.Label(motion_tab,text='POSE KEYFRAMES  ·  position + size',foreground=GREEN,
-                  font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(6,2))
+                  font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(3,2))
         poses=ttk.Frame(motion_tab);poses.pack(fill='x')
         self.set_key_button=ttk.Button(poses,text='◆ Set pose',style='Small.TButton',command=self.set_keyframe)
         self.set_key_button.pack(side='left',fill='x',expand=True,padx=(0,4))
         self.remove_key_button=ttk.Button(poses,text='Remove ◆',style='Small.TButton',command=self.remove_keyframe)
         self.remove_key_button.pack(side='left',fill='x',expand=True)
-        ttk.Label(motion_tab,text='Move playhead in selected scene; enter Position + Size, then Set pose. Diamonds show keys.',
-                  foreground=MUTED,wraplength=240).pack(anchor='w',pady=(5,0))
+        ttk.Label(motion_tab,text='Timeline → Position / Size → Set pose. Diamonds mark saved poses.',
+                  foreground=MUTED,wraplength=240).pack(anchor='w',pady=(3,0))
         ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
         self.format_combo.pack(fill='x');self.format_combo.bind('<<ComboboxSelected>>',self.apply_output)
