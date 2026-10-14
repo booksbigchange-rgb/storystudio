@@ -25,6 +25,18 @@ jobs:
       - name: Run headless renderer tests
         run: python -m unittest discover -s tests -v
 
+  gui-smoke:
+    name: Linux Tkinter UI smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system Tkinter, Pillow and virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-pil python3-pil.imagetk xvfb
+      - name: Launch desktop editor and test canvas/keyframes
+        run: xvfb-run -a /usr/bin/python3 tests/gui_smoke.py
+
   ffmpeg-smoke:
     name: FFmpeg render smoke test
     runs-on: ubuntu-latest
