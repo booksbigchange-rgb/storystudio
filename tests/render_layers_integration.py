@@ -1,5 +1,6 @@
 """Small, automated layered-render test; CI installs Pillow and FFmpeg."""
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -49,6 +50,11 @@ def main():
         assert 1.4 <= float(payload["format"]["duration"]) <= 1.6, payload
         subprocess.run(["ffmpeg", "-v", "error", "-i", str(output), "-f", "null", "-"],
                        check=True, capture_output=True, text=True)
+        if len(sys.argv) > 1:
+            destination = Path(sys.argv[1]).resolve()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(output, destination)
+            print(f"Demo MP4 saved to {destination}")
         print("PASS: keyframed layered character + legacy scene export, 1.5s H.264 decoded")
 
 

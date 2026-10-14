@@ -48,8 +48,8 @@ jobs:
       - name: End-to-end StoryStudio scene render test
         run: python tests/render_integration.py
       - name: Layered animation export integration test
-        run: python tests/render_layers_integration.py
+        run: python tests/render_layers_integration.py artifacts/layered-demo.mp4
       - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-smoke-mp4
-          path: artifacts/smoke.mp4
+          name: storystudio-2d-render-previews
+          path: artifacts/*.mp4
