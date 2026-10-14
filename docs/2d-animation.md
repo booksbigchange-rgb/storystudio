@@ -65,3 +65,33 @@ into main without desktop acceptance tests.
 7. **Clear motion** removes that layer's motion. Changing scene duration retimes its existing keyframes proportionally.
 
 This is a first working control set, not a finished animation UI. Desktop mouse handling and full-resolution playback have not been tested on the user's Windows system. The current preview offers start/end frames rather than continuous playback. Existing silent video exports remain silent; narration mixing and advanced rigging come later.
+
+## Milestone 2 — Timeline, playback and canvas controls
+
+Update the Windows checkout using `git pull --ff-only` while on
+`feature/2d-animation`, then open `Open-StoryStudio.cmd`.
+
+- **Canvas:** choose Portrait 9:16 or Landscape 16:9 and **Fit** to
+  show the entire original image, or **Fill** to crop it to the stage.
+  Press **Apply canvas**. Canvas settings are saved into project JSON
+  as an optional top-level `canvas` field; old version-1 files default
+  to Portrait 9:16 Fill and remain supported.
+- **Play/Pause:** plays the currently selected scene. CPU preview
+  approximately 10 FPS, not a realtime 24-FPS guarantee.
+  MP4 export continues at 24 FPS.
+- **Scrub:** drag the slider or click the scene timeline. Use **-1 frame**
+  and **+1 frame** for frame-step navigation.
+- **Keyframe editor:** select a character layer, scrub to a point in
+  the scene, enter x/y/scale/rotation/opacity, choose easing, and click
+  **Set keyframe**. Repeat at a later time to animate.
+- **Diamond markers:** click a layer timeline diamond to select an
+  existing keyframe; drag left/right to retime it, or click
+  **Delete keyframe**. The marker cannot overtake another marker.
+- **Drag on preview:** adjusts the selected layer's pose at the
+  playhead, preserving other keyframes.
+- **Export:** `Export MP4` uses project canvas settings and supports
+  both image-only and layered scenes in the same story.
+
+**Current boundaries:** no body-part puppet rig, lip-sync, audio timeline,
+undo/redo or advanced path editing yet. Before merging, verify Windows
+playback and one Portrait Fit and Landscape Fit MP4 manually.

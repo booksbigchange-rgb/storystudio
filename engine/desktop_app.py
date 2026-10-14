@@ -119,6 +119,22 @@ class StoryStudioApp:
         self.root.title("StoryStudio — 2D Animation Studio")
         self.root.geometry("1440x900")
         self.root.minsize(1000, 690)
+        self.root.configure(bg="#111827")
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        style.configure(".", background="#111827", foreground="#e2e8f0",
+                        fieldbackground="#1f2937", font=("Segoe UI", 10))
+        style.configure("TFrame", background="#111827")
+        style.configure("TLabel", background="#111827", foreground="#e2e8f0")
+        style.configure("TButton", background="#29374e", foreground="#f1f5f9",
+                        padding=(7, 4), borderwidth=1)
+        style.map("TButton", background=[("active", "#38557e")])
+        style.configure("TEntry", fieldbackground="#1f2937", foreground="#f8fafc",
+                        insertcolor="#f8fafc")
+        style.configure("TCombobox", fieldbackground="#1f2937",
+                        foreground="#f8fafc", background="#29374e")
+        style.map("TCombobox", fieldbackground=[("readonly", "#29374e")],
+                  foreground=[("readonly", "#f8fafc")])
         self._preview_image = None
         self._stage_rect = None
         self.preview_end = False
@@ -133,6 +149,7 @@ class StoryStudioApp:
         self.fit_mode = tk.StringVar(value="fill")
         self.time_readout = tk.StringVar(value="0.00 / 0.00 s")
         self.selected_key_index = None
+        self._active_layer_id = None
         self._motion_drag = None
         self.ease_input = tk.StringVar(value="smooth")
         self.transform_inputs = {
@@ -192,12 +209,16 @@ class StoryStudioApp:
         preview_panel = ttk.Frame(workspace)
         workspace.add(preview_panel, weight=3)
         ttk.Label(scenes_panel, text="SCENES").pack(anchor="w")
-        self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=9, exportselection=False)
+        self.items = tk.Listbox(scenes_panel, font=("Segoe UI", 11), height=9, exportselection=False,
+                                bg="#1f2937", fg="#e2e8f0", selectbackground="#2563eb",
+                                selectforeground="#ffffff", relief="flat")
         self.items.pack(fill="both", expand=True)
         self.items.bind("<<ListboxSelect>>", self.on_select)
         ttk.Label(scenes_panel, text="CHARACTER / PROP LAYERS").pack(anchor="w", pady=(10, 2))
         self.layer_items = tk.Listbox(scenes_panel, font=("Segoe UI", 10), height=5,
-                                      exportselection=False)
+                                      exportselection=False, bg="#1f2937", fg="#e2e8f0",
+                                      selectbackground="#2563eb", selectforeground="#ffffff",
+                                      relief="flat")
         self.layer_items.pack(fill="x")
         self.layer_items.bind("<<ListboxSelect>>", self.on_layer_select)
         layer_actions = ttk.Frame(scenes_panel)
@@ -213,6 +234,10 @@ class StoryStudioApp:
         ttk.Button(preview_actions, text="End frame", command=lambda: self.show_pose(True)).pack(side="left", padx=2)
         self.play_button = ttk.Button(preview_actions, text="Play", command=self.toggle_play)
         self.play_button.pack(side="left", padx=7)
+        ttk.Button(preview_actions, text="-1 frame",
+                   command=lambda: self.step_frame(-1)).pack(side="left", padx=2)
+        ttk.Button(preview_actions, text="+1 frame",
+                   command=lambda: self.step_frame(1)).pack(side="left", padx=2)
         self.scrubber = ttk.Scale(preview_actions, from_=0, to=5,
                                   command=self.scrub_changed, length=180)
         self.scrubber.pack(side="left", fill="x", expand=True, padx=8)
@@ -264,7 +289,7 @@ class StoryStudioApp:
         ttk.Label(frame, textvariable=self.status, wraplength=790).pack(anchor="w", pady=12)
         ttk.Label(
             frame,
-            text="MVP: image sequencing + gentle camera zoom. Character rigs, audio and lip-sync come later.",
+            text="2D milestone: scene playback, editable keyframes, Fit/Fill framing. Character rigs and audio come later.",
             foreground="#666666",
         ).pack(anchor="w")
 
@@ -275,6 +300,7 @@ class StoryStudioApp:
         if index is not None and 0 <= index < len(self.scenes):
             self.items.selection_set(index)
         self.selected_key_index = None
+        self._active_layer_id = None
         self.refresh_layers()
         self.draw_timeline()
         self.set_playhead(0)
@@ -316,6 +342,7 @@ class StoryStudioApp:
                 self.camera_inputs[key].set(str(value))
         self.preview_end = False
         self.selected_key_index = None
+        self._active_layer_id = None
         self.playhead = 0.0
         self.refresh_layers()
         self.draw_timeline()
@@ -351,6 +378,8 @@ class StoryStudioApp:
             left, top = (w - pw) // 2, (h - ph) // 2
             self._stage_rect = (left, top, pw, ph)
             self.preview.create_image(w // 2, h // 2, image=self._preview_image)
+            self.preview.create_rectangle(left, top, left + pw, top + ph,
+                                          outline="#64748b", width=1)
         except (OSError, ValueError, RuntimeError, tk.TclError) as exc:
             self.preview.create_text(w // 2, h // 2, fill="#ffb3b3",
                                      text=f"Preview unavailable: {exc}", width=w - 20)
@@ -374,6 +403,10 @@ class StoryStudioApp:
         self.draw_preview()
         self.draw_motion_timeline()
         self.refresh_transform_fields()
+
+    def step_frame(self, offset):
+        self.stop_playback()
+        self.set_playhead(self.playhead + offset / FPS)
 
     def scrub_changed(self, value):
         if self._sync_scrubber:
@@ -493,7 +526,12 @@ class StoryStudioApp:
             value.set(f"{state[key]:.3f}")
 
     def on_layer_select(self, _event=None):
-        self.selected_key_index = None
+        scene_index, layer_index = self.selected(), self.selected_layer()
+        if scene_index is not None and layer_index is not None:
+            layer_id = self.scenes[scene_index]["layers"][layer_index]["id"]
+            if layer_id != self._active_layer_id:
+                self.selected_key_index = None
+            self._active_layer_id = layer_id
         self.refresh_transform_fields()
         self.draw_preview()
         self.draw_motion_timeline()
@@ -550,6 +588,7 @@ class StoryStudioApp:
         if 0 <= row < len(scene.get("layers", [])) and abs(y - (39 + row * 28)) <= 13:
             self.layer_items.selection_clear(0, "end")
             self.layer_items.selection_set(row)
+            self._active_layer_id = scene["layers"][row]["id"]
             self.layer_items.see(row)
             frame_list = scene["layers"][row].get("keyframes", [])
             for marker_index, marker in enumerate(frame_list):
