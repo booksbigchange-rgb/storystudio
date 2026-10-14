@@ -60,6 +60,25 @@ def validate(data):
         for field, low, high in [('duration', 1, 30), ('x', .2, .7),
                                  ('size', .6, 1.25), ('speed', .5, 2)]:
             scene[field] = number(scene.get(field), field, low, high)
+
+        # Optional per-scene animation poses, measured in seconds from scene start.
+        # Keep version 2 documents fully compatible with projects saved before
+        # keyframes existed. Reject malformed/unsorted keyframes rather than
+        # silently changing animation timing on load.
+        if 'keyframes' in scene:
+            frames = scene['keyframes']
+            if not isinstance(frames, list) or len(frames) > 12:
+                raise ValueError('Use at most 12 keyframes per scene')
+            previous = -1.0
+            for frame in frames:
+                if not isinstance(frame, dict) or set(frame) != {'t', 'x', 'size'}:
+                    raise ValueError('Each keyframe needs t, x and size')
+                frame['t'] = number(frame['t'], 'Keyframe time', 0, scene['duration'])
+                frame['x'] = number(frame['x'], 'Keyframe position', .2, .7)
+                frame['size'] = number(frame['size'], 'Keyframe size', .6, 1.25)
+                if frame['t'] <= previous:
+                    raise ValueError('Keyframes must have strictly increasing times')
+                previous = frame['t']
     if total_duration(doc) > 120:
         raise ValueError('A project can be at most 120 seconds')
     return doc
