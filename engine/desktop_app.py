@@ -14,6 +14,7 @@ from timeline import scene_at, scene_ranges, total_duration
 from camera import DEFAULT as CAMERA_DEFAULT, camera_values, zoompan_filter
 from animation import validated_layers, retime_layers
 from layer_render import render_layer_segment
+from stage import DEFAULT as CANVAS_DEFAULT, PRESETS, validate_canvas
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -37,13 +38,17 @@ def ffmpeg_binary():
     return str(FFMPEG) if FFMPEG.is_file() else shutil.which("ffmpeg")
 
 
-def render_scenes(scenes, output, progress=None):
+def render_scenes(scenes, output, progress=None, canvas=None):
     """Render still-image scenes into a vertical H.264 MP4, with no shell calls."""
     if not scenes:
         raise ValueError("Add at least one scene before rendering")
     binary = ffmpeg_binary()
     if not binary:
         raise RuntimeError("FFmpeg not found in tools/ffmpeg or PATH")
+    settings = validate_canvas(canvas) if canvas is not None else {
+        "width": WIDTH, "height": HEIGHT, "fit": "fill"}
+    frame_width, frame_height, frame_fit = (
+        settings["width"], settings["height"], settings["fit"])
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     job = TEMP / ("render-" + uuid.uuid4().hex)
@@ -60,16 +65,23 @@ def render_scenes(scenes, output, progress=None):
             frames = round(duration * FPS)
             segment = job / f"scene_{index:04d}.mp4"
             if scene.get("layers"):
-                render_layer_segment(scene, segment, binary, WIDTH, HEIGHT, FPS)
+                render_layer_segment(scene, segment, binary, frame_width, frame_height, FPS, frame_fit)
             else:
                 # Scale/crop to fill a vertical frame; subtle movement without
                 # fabricating character animation from a single illustration.
-                vf = (
-                    f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-                    f"crop={WIDTH}:{HEIGHT},"
-                    + zoompan_filter(scene, frames, WIDTH, HEIGHT, FPS)
-                    + ",format=yuv420p"
-                )
+                if frame_fit == "fit":
+                    background_filter = (
+                        f"scale={frame_width}:{frame_height}:force_original_aspect_ratio=decrease,"
+                        f"pad={frame_width}:{frame_height}:(ow-iw)/2:(oh-ih)/2:color=0x141820,"
+                    )
+                else:
+                    background_filter = (
+                        f"scale={frame_width}:{frame_height}:force_original_aspect_ratio=increase,"
+                        f"crop={frame_width}:{frame_height},"
+                    )
+                vf = (background_filter
+                      + zoompan_filter(scene, frames, frame_width, frame_height, FPS)
+                      + ",format=yuv420p")
                 cmd = [
                     binary, "-hide_banner", "-loglevel", "error", "-y",
                     "-loop", "1", "-i", str(image), "-vf", vf,

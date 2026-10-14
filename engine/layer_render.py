@@ -9,12 +9,13 @@ from pathlib import Path
 
 from animation import layer_state, validated_layers
 from camera import camera_values
+from stage import resized_background
 
 
-def render_scene_frame(scene, seconds, width, height):
+def render_scene_frame(scene, seconds, width, height, fit="fill"):
     """Return a Pillow RGB frame; preview and export use this same function."""
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image
     except ImportError as exc:
         raise RuntimeError("Pillow is required for character layers") from exc
 
@@ -25,8 +26,7 @@ def render_scene_frame(scene, seconds, width, height):
         raise ValueError("Invalid frame dimensions")
     layers = validated_layers(scene.get("layers", []), duration)
     with Image.open(scene["image"]) as background:
-        stage = ImageOps.fit(background.convert("RGBA"), (width, height),
-                             method=Image.Resampling.LANCZOS)
+        stage = resized_background(background, width, height, fit)
     for layer in layers:
         state = layer_state(layer, seconds)
         with Image.open(layer["image"]) as source:
@@ -65,7 +65,7 @@ def render_scene_frame(scene, seconds, width, height):
     ).convert("RGB")
 
 
-def render_layer_segment(scene, target, ffmpeg, width, height, fps):
+def render_layer_segment(scene, target, ffmpeg, width, height, fps, fit="fill"):
     """Stream raw frames to the existing FFmpeg encoder; never cache frames."""
     duration = float(scene["duration"])
     validated_layers(scene.get("layers", []), duration)
@@ -86,7 +86,7 @@ def render_layer_segment(scene, target, ffmpeg, width, height, fps):
         try:
             for frame in range(frames):
                 moment = duration * frame / max(1, frames - 1)
-                frame_bytes = render_scene_frame(scene, moment, width, height).tobytes()
+                frame_bytes = render_scene_frame(scene, moment, width, height, fit).tobytes()
                 process.stdin.write(frame_bytes)
         except BrokenPipeError:
             pass

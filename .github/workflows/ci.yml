@@ -49,6 +49,8 @@ jobs:
         run: python tests/render_integration.py
       - name: Layered animation export integration test
         run: python tests/render_layers_integration.py artifacts/layered-demo.mp4
+      - name: Landscape Fit/Fill export integration
+        run: python tests/render_landscape_integration.py
       - uses: actions/upload-artifact@v4
         with:
           name: storystudio-2d-render-previews
