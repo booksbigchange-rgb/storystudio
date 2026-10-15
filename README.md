@@ -93,6 +93,8 @@ No API key, cloud credits or subscription is required for these verified functio
 
 Use `Open-StoryStudio.cmd` in this source workspace. The existing D: Python
 installation needs Playwright 1.55.0 and Pillow; it uses the installed Chrome/Edge.
+On this computer, `Open-StoryStudio-Portable.cmd` opens the verified compiled build
+in `exports/portable-766646f`. Its GUI and maximum-length export passed locally.
 For the Python-free executable, download the tested Windows portable artifact from
 the draft PR's Actions run and extract all files into a writable folder on D:.
 

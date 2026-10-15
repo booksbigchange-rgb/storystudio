@@ -34,6 +34,9 @@ Synfig/Krita/Kdenlive installations were not modified.
 - Local demo ZIP: `D:\StoryStudio\exports\story-studio-2-demo.zip` (about 593 KiB).
 - Local editable demo folder: `D:\StoryStudio\exports\story-studio-2-demo`.
 - Local source launcher: `D:\StoryStudio\Open-StoryStudio.cmd`.
+- Local verified executable ZIP: `D:\StoryStudio\exports\StoryStudio-2.0-Windows-766646f.zip`.
+- Local compiled-app launcher: `D:\StoryStudio\Open-StoryStudio-Portable.cmd`.
+- Local compiled-app evidence: `D:\StoryStudio\exports\portable-local-validation-766646f.zip`.
 
 GitHub downloads require access to the repository. Current artifacts expire on
 **29 October 2026 at about 00:16 EAT**. Save the ZIP before expiry or rerun the workflow.
@@ -48,11 +51,11 @@ Evidence ZIP: 3d2b062226c7fd0c9cf069303a819b0b9ab99ca28478bb044d82706f0dd5d125
 Local demo ZIP: afa4c6a7be88252e0dec79ea9f78a1c9ad0967b79ea0a1958eafefd65ca81b56
 ```
 
-The Windows ZIP is delivered through the successful GitHub artifact; a complete
-local executable ZIP is not claimed. An interrupted download from an older build
-was removed. The final evidence ZIP was downloaded and its SHA-256 matched the
-GitHub digest above. Its source/compiled GUI reports and render report all say
-PASS; the compiled GUI screenshot was inspected.
+The complete Windows ZIP was downloaded locally and matched the GitHub SHA-256.
+All 1,429 extracted files matched the CI checksum manifest. The verified executable
+is in `exports/portable-766646f`; the root portable launcher scopes its environment
+to D:. The final CI evidence ZIP also matched its digest. Its source/compiled GUI
+reports and render report all say PASS; GUI screenshots were inspected.
 
 ## What the automated checks actually established
 
@@ -84,8 +87,24 @@ CI separately used real Windows offline speech for its audio fixture.
 The local Windows machine was identified as **AMD Ryzen 3 5425U with Radeon Graphics**,
 with **11.36 GiB reported physical memory** (the nominal 12 GB configuration).
 Local source GUI, Chrome rendering, FFmpeg exports and Kokoro generation were tested
-automatically. The compiled executable was tested on the GitHub Windows runner;
-a local compiled-EXE installation or manual user acceptance session is not claimed.
+automatically. The downloaded compiled executable also passed its real GUI tests
+on this computer: laptop geometry, widget edits, scene order, portrait preset,
+save/open, browser frame, GUI MP4 export and worker completion.
+
+The compiled app then exported the maximum supported **20 scenes / 120 seconds**
+at **720×1280, 24fps**, using its bundled FFmpeg. Export and verification took
+**155.86 seconds**, with a sampled peak process-tree working set of **763.1 MiB**
+(below the 2 GiB test budget). Independent verification confirmed H.264/AAC,
+2,880 frames, full error-free decoding and 20 distinct, nonblank scene samples
+with the expected backdrops in order. This test uses the default chimes; the
+separate six-second demo verifies real Kokoro narration.
+
+Evidence is in `exports/portable-local-validation-766646f`: `integrity.json`,
+`endurance-results.json`, `independent-video-verification.json`, memory samples,
+the actual MP4, decoded scene samples, and `gui-20261015-092126/gui-results.json`.
+The two-minute MP4 SHA-256 is
+`5f96a12c1952d49bc3482390c7a0b6f15317a4a99ded7bf84c8e3bf65246c4b7`.
+The GUI suite can be rerun with `Open-StoryStudio-Portable.cmd -GuiTest`.
 
 A local six-second, 720×1280, 24fps portrait render and verification took **16.13 seconds**.
 The maximum sampled sum of process-tree working sets was **706.24 MiB**. Sampling was
@@ -106,8 +125,9 @@ The evidence is `exports/studio-2-validation/hardware-smoke.json`.
 - No imported-artwork rigging, per-limb keyframe editor, lip sync, undo history,
   soundtrack mixing or transition editor. The separate legacy 2D editor is not
   silently migrated into this portable app.
-- Manual usability, listening quality, longer-project endurance, and installation
-  on other physical computers remain untested. No milestone here implies those checks.
+- Manual usability, listening quality, repeated-export thermal/battery endurance,
+  and installation on other physical computers remain untested. The maximum-length
+  project passed on this computer; that does not establish those separate checks.
 
 ## Repairs and traceability
 
