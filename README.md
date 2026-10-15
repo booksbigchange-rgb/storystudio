@@ -100,3 +100,6 @@ The editor supports multi-scene cartoons, three reusable characters, expression 
 motion presets, narration import, saved projects, and 16:9 / 9:16 exports.
 See [portable instructions](integrations/lemo-lite/PORTABLE-README.md) and
 [development audit](docs/story-studio-2-development-audit.md) for verified scope.
+
+The completed results, downloads, exact tested commit and hardware smoke
+measurement are in [the final development report](docs/story-studio-2-final-report.md).
