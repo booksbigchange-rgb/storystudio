@@ -1,41 +1,43 @@
-# StoryStudio 2.0 — Lemo-lite (Phase 1 pilot)
+# StoryStudio 2.0 — Lemo-lite portable editor
 
-An isolated, original 10-second Canvas 2D cartoon built around **Lemo OpusCar's deterministic window.render(t) approach** and its MIT-licensed interpolation helpers (vendor/lemo-lib.js). No AI/cloud service or 3D model is needed at render time.
+This integration uses Lemo OpusCar's deterministic `window.render(t)` convention
+and selected MIT motion helpers. The reusable character artwork is original.
+No cloud generation, Docker, GPU, Node runtime or full Lemo installation is needed.
 
-Nothing replaces Synfig, Krita, Kdenlive, FFmpeg, Kokoro or the existing native .sif test. No D: configuration, user projects, installers or main branch files are modified. This is an **integration pilot**, not the full 43-style application or a visual timeline editor.
+Read [the editor guide](PORTABLE-README.md) for features, controls and limitations.
+From the repository root, use `Open-StoryStudio.cmd`. It loads the existing
+`launchers/environment.ps1` and D: Python environment. Playwright 1.55.0 and Pillow
+are required in that environment. Use existing Chrome/Edge; do not download a
+second browser. Keep dependency downloads and logs beneath D:\StoryStudio.
 
-## Windows installation (keep everything on D:)
+## Automated checks
 
-From PowerShell after checking out the feature branch into D:\StoryStudio, run:
+Load `launchers/environment.ps1` before these commands:
 
-1. Load the existing environment: . .\launchers\environment.ps1
-2. Install Playwright in the *existing* Python virtual environment: .\tools\uv\uv.exe pip install --python .\engine\.venv\Scripts\python.exe playwright
-3. Render: .\engine\.venv\Scripts\python.exe .\integrations\lemo-lite\renderer.py --overwrite
+```powershell
+& .\engine\.venv\Scripts\python.exe -m unittest discover -s integrations/lemo-lite/tests -v
+& .\engine\.venv\Scripts\python.exe integrations/lemo-lite/tests/render_regression.py --output exports/regression
+& .\Open-StoryStudio.cmd --gui-test --output D:\StoryStudio\exports\gui-regression
+```
 
-If uv.exe is in a different folder, use its real location, or run the environment's python.exe -m pip install playwright (when pip is available).
+The Windows workflow runs those checks, builds with PyInstaller, and tests the
+compiled executable. Use fresh output folders for packaged `--self-test`, which
+refuses to overwrite existing MP4s. The GUI file-save dialog asks before replacement.
 
-Chrome or Edge must already be installed; no additional browser download is needed locally. Chrome can be specified with STORYSTUDIO_CHROME and FFmpeg with STORYSTUDIO_FFMPEG. Dependencies: Python 3.11+, Playwright Python, Chrome/Edge, FFmpeg and FFprobe. **No Node, Docker, WSL, or paid model is needed for this pilot.**
+For command-line exports use `renderer.py --project my-cartoon.json --duration 10
+--width 1280 --height 720 --fps 24 --output exports/my-cartoon.mp4`. Set duration
+and dimensions to the desired project export. Without `--project`, the original
+10-second Pip story preset is used. `--audio` overrides project audio. `--overwrite`
+is opt-in; failed/cancelled exports preserve existing destinations.
 
-## Browser preview without exporting
+## Implementation
 
-From the D:\StoryStudio folder:
+- `project.py`: validation, presets, atomic saves, referenced audio paths.
+- `studio_ui.py`: Windows Tk editor and main-thread event queue.
+- `renderer.py`: single-browser capture, streamed FFmpeg encoding, verification.
+- `scene/characters.js`: reusable cutout rigs and deterministic action poses.
+- `scene/scene.js`: multi-scene playback and aspect-aware composition.
+- `gui_regression.py` and `tests/`: source and packaged checks.
 
-1. Load the existing environment: . .\launchers\environment.ps1
-2. Run: .\engine\.venv\Scripts\python.exe -m http.server 8765 --bind 127.0.0.1 --directory .\integrations\lemo-lite
-3. Open http://127.0.0.1:8765/scene/ in a browser. Use Play and the scrub slider. Stop the server with Ctrl+C.
-
-## Export and verification
-
-- Default: 10 seconds, 1280×720, 24 fps. Use --overwrite only when intended.
-- Smoke test: --duration 2 --width 640 --height 360 --fps 12 --overwrite
-- Existing narrated WAV: --audio D:\StoryStudio\exports\narration.wav
-- Output defaults to D:\StoryStudio\exports\lemo-pip-test.mp4 when placed in that project directory.
-- Audio defaults to newly synthesized original chime cues, **not narration**.
-- Verification checks dimensions, duration, FPS, video and audio streams, and decodes the whole output.
-- CI test: .github/workflows/lemo-lite-smoke.yml, on the feature branch. It exports both 2-second and 10-second examples and uploads the MP4 files as a short-lived workflow artifact.
-
-## License and limitations
-
-The upstream project is https://github.com/lemomo-ai/lemo-opuscar. The selected interpolation helpers are from its MIT-licensed core/lib.js, acknowledged in LICENSE-LEMO.md. The fox and star art is original and procedural. The full OpusCar engine and its 43 sample films **have not** been imported.
-
-The renderer runs one original scene. Supporting more styles/scenes and measuring actual Ryzen 3 Windows performance are future milestones. Do not claim that a hosted runner test proves performance on a local Windows laptop.
+The standalone editor does not replace the separate Synfig/Krita/Kdenlive workflow.
+Legacy projects and artwork are retained. See `LICENSE-LEMO.md` for upstream notice.
