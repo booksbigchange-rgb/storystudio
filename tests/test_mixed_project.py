@@ -12,7 +12,7 @@ from studio_hub import project_kind
 class MixedTests(unittest.TestCase):
     def test_save_relative_roundtrip_and_protect_source(self):
         with tempfile.TemporaryDirectory() as folder:
-            source = Path(folder)/'source.json'
+            source = Path(folder).resolve()/'source.json'
             source.write_text('ORIGINAL')
             doc = model.new_project()
             doc['sections'] = [dict(engine='cartoon', project=str(source), name='Character')]

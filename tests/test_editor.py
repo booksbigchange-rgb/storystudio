@@ -66,7 +66,7 @@ class EditorTests(unittest.TestCase):
 
     def test_project_roundtrip_relative_media_and_audio(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             path = root / "story.json"
             scenes = [{"image": str(root / "image.png"), "duration": 2, "easing": "smooth"}]
             audio = {"path": str(root / "voice.wav"), "volume": .5, "offset": .2}
