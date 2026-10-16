@@ -38,6 +38,16 @@ Neither linked project format is converted or overwritten. Shared exports remain
   caused by differing section color metadata. Sections now normalize to BT.709.
 - `.github/workflows/story-studio-unified.yml` runs unit and real GUI/MP4 checks
   on Windows and uploads videos, reports, screenshots and dependency provenance.
+- Windows run [38947861109](https://github.com/booksbigchange-rgb/storystudio/actions/runs/38947861109)
+  passed on commit `644dfaf`: all 73 unit tests and real GUI/MP4 acceptance.
+  The first run exposed two older test fixtures comparing Windows short paths
+  with expanded paths; fixture normalization repaired them without changing
+  project storage behavior.
+- Local acceptance: `exports/titles-acceptance-1158900de8a0421790d1de4e14ccc250/`.
+  Local evidence ZIP: `exports/story-studio-timed-titles-validation.zip`.
+  Downloaded Windows evidence: `exports/titles-windows-644dfaf/`.
+- Draft review: [PR #7](https://github.com/booksbigchange-rgb/storystudio/pull/7),
+  stacked on the portable feature branch. No merge into main.
 
 The existing packaged cartoon EXE is unchanged; this feature belongs to the
 source unified app. A combined portable executable, live mixed playback,
