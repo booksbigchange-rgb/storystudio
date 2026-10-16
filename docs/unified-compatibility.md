@@ -20,11 +20,11 @@ The new launcher is source-only; the existing packaged EXE does not contain it.
 | Editing | Undo, camera keys, independent artwork layers | Character/expression/action presets | Separate workspaces under one launcher |
 | Imports | Modules named project, local engine imports | Also project, plus renderer | Separate child processes prevent module collisions |
 
-This is a combined entry point and source tree, not yet a single mixed-scene
+This initial compatibility checkpoint provided a combined entry point and source tree, not a single mixed-scene
 timeline. Character scenes cannot yet become editable documentary layers. Neither
-existing project format can represent all features of the other. A future explicit
-mixed-scene format needs renderer dispatch, timing and audio ownership, and tests
-for both legacy imports before introducing conversion.
+existing project format can represent all features of the other. The subsequent
+shared-timeline milestone adds an explicit section format and renderer dispatch
+without converting legacy scenes; see `shared-timeline.md` for current capabilities.
 
 ## Verification
 
@@ -43,7 +43,7 @@ for both legacy imports before introducing conversion.
 
 ## Remaining milestones
 
-1. One mixed-scene project/timeline with explicit legacy import and no source overwrite.
+1. Section-level mixed timeline is now implemented; see `shared-timeline.md`. Individual scene unification remains later work.
 2. Editable timed titles, dates, sources and captions shared across both engines.
 3. Documentary templates: evidence desk, chronological timeline and maps.
 4. Layer interior keys, anchors, masks and camera-linked depth.

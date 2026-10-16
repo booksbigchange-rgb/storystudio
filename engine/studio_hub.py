@@ -13,6 +13,10 @@ def project_kind(path):
     if path.stat().st_size > 1024 * 1024:
         raise ValueError('Project exceeds 1 MB')
     doc = json.loads(path.read_text(encoding='utf-8'))
+    if isinstance(doc, dict) and doc.get('kind') == 'storystudio-mixed':
+        from mixed_project import validate
+        validate(doc)
+        return 'mixed'
     if not isinstance(doc, dict) or not isinstance(doc.get('scenes'), list):
         raise ValueError('Not a StoryStudio project')
     scenes = doc['scenes']
@@ -27,7 +31,7 @@ def project_kind(path):
 
 
 def command(kind, path=None):
-    if kind not in ('documentary', 'cartoon'):
+    if kind not in ('documentary', 'cartoon', 'mixed'):
         raise ValueError('Unknown editor')
     result = [sys.executable, str(Path(__file__).resolve()), '--editor', kind]
     if path:
@@ -38,7 +42,17 @@ def command(kind, path=None):
 def run_editor(kind, path=None, smoke=False):
     if path and project_kind(path) != kind:
         raise ValueError('Project belongs to the other editor')
-    if kind == 'cartoon':
+    if kind == 'mixed':
+        import tkinter as tk
+        from mixed_editor import MixedEditor
+        root = tk.Tk()
+        app = MixedEditor(root, path)
+        if smoke:
+            root.update()
+            app.close()
+        else:
+            root.mainloop()
+    elif kind == 'cartoon':
         # Both engines have a project.py. A fresh process and explicit search path
         # keep their imports separate, including when launched from either cwd.
         sys.path.insert(0, str(ROOT / 'integrations/lemo-lite'))
@@ -75,7 +89,7 @@ def run_editor(kind, path=None, smoke=False):
 
 def main():
     parser = argparse.ArgumentParser(description='StoryStudio project launcher')
-    parser.add_argument('--editor', choices=('documentary', 'cartoon'))
+    parser.add_argument('--editor', choices=('documentary', 'cartoon', 'mixed'))
     parser.add_argument('--project')
     parser.add_argument('--smoke', action='store_true')
     args = parser.parse_args()
@@ -95,13 +109,15 @@ def main():
     from tkinter import ttk, filedialog, messagebox
     root = tk.Tk()
     root.title('StoryStudio · Choose your workspace')
-    root.geometry('620x330')
+    root.geometry('620x390')
     frame = ttk.Frame(root, padding=24)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='STORYSTUDIO', font=('Segoe UI', 22, 'bold')).pack(anchor='w')
     ttk.Label(frame, text='Choose a workspace or open an existing project.', padding=(0,12)).pack(anchor='w')
     def launch(kind, path=None):
         subprocess.Popen(command(kind, path), cwd=ROOT)
+    ttk.Button(frame, text='Shared timeline · combine documentary and character sections',
+               command=lambda: launch('mixed')).pack(fill='x', pady=6)
     ttk.Button(frame, text='Dark documentary · artwork, camera, layers and audio',
                command=lambda: launch('documentary')).pack(fill='x', pady=6)
     ttk.Button(frame, text='Character animation · reusable rigs and actions',
