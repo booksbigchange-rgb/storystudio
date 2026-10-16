@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import uuid
+from mixed_titles import validate_titles
 
 FORMATS = {'widescreen': (1280, 720), 'portrait': (720, 1280)}
 
@@ -18,6 +19,7 @@ def validate(doc):
     if doc.get('format') not in FORMATS:
         raise ValueError('Unsupported timeline format')
     sections = doc.get('sections')
+    validate_titles(doc.get('titles', []))
     if not isinstance(sections, list) or len(sections) > 20:
         raise ValueError('Use at most 20 sections')
     for section in sections:

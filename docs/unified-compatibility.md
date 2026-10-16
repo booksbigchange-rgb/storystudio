@@ -44,7 +44,7 @@ without converting legacy scenes; see `shared-timeline.md` for current capabilit
 ## Remaining milestones
 
 1. Section-level mixed timeline is now implemented; see `shared-timeline.md`. Individual scene unification remains later work.
-2. Editable timed titles, dates, sources and captions shared across both engines.
+2. Timed titles, dates, sources and captions are implemented; see `timed-titles.md` for validation and limits.
 3. Documentary templates: evidence desk, chronological timeline and maps.
 4. Layer interior keys, anchors, masks and camera-linked depth.
 5. Shared narration/music/SFX mixing with ducking.

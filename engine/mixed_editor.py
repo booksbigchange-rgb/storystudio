@@ -38,7 +38,7 @@ class MixedEditor:
         self.selector.pack(side='left')
         self.selector.bind('<<ComboboxSelected>>', self.change_format)
         self.buttons = []
-        for label, action in [('Save timeline', self.save), ('Open timeline', self.open), ('Export MP4', self.export)]:
+        for label, action in [('Save timeline', self.save), ('Open timeline', self.open), ('Export MP4', self.export), ('Timed text', self.edit_titles)]:
             b = ttk.Button(controls, text=label, command=action)
             b.pack(side='right', padx=4)
             self.buttons.append(b)
@@ -63,6 +63,10 @@ class MixedEditor:
     def selected(self):
         choice = self.items.curselection()
         return choice[0] if choice else None
+
+    def edit_titles(self):
+        from mixed_titles_editor import TitlesEditor
+        return TitlesEditor(self)
 
     def refresh(self, index=0):
         self.items.delete(0, 'end')

@@ -7,6 +7,7 @@ import sys
 import uuid
 from mixed_project import validate, FORMATS
 from studio_hub import project_kind
+from mixed_titles import validate_titles, card
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = Path(__file__).with_name('mixed_worker.py')
@@ -50,6 +51,12 @@ def export(doc, output, progress=lambda _: None):
     duration = sum(s[2] for s in sections)
     if duration > 600:
         raise ValueError('Mixed timelines currently support up to 10 minutes')
+    titles = validate_titles(doc.get('titles', []), duration)
+    cards = []
+    for i, item in enumerate(titles):
+        image, xy = card(item, width, height)
+        image.save(work/f'title-{i}.png')
+        cards.append(xy)
     (work/'expected.json').write_text(json.dumps(dict(duration=duration, width=width, height=height)), encoding='utf-8')
     for i, (section, snapshot, seconds) in enumerate(sections):
         progress(f'Rendering section {i+1}/{len(sections)}: {section["name"]}')
@@ -61,9 +68,10 @@ def export(doc, output, progress=lambda _: None):
         if not has_audio:
             args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
         args += ['-map', '0:v:0', '-map', '0:a:0' if has_audio else '1:a:0',
-                 '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p',
+                 '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:out_color_matrix=bt709:out_range=tv,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p',
                  '-af', 'aresample=48000,apad', '-ac', '2', '-ar', '48000',
                  '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-threads', '2',
+                 '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
                  '-c:a', 'pcm_s16le', '-t', str(seconds), str(work/f'section-{i}.mkv')]
         run(args, log)
     concat = work/'sections.txt'
@@ -71,8 +79,24 @@ def export(doc, output, progress=lambda _: None):
     pending = output.with_name('.'+output.stem+'.'+uuid.uuid4().hex+'.partial.mp4')
     try:
         progress('Joining sections and checking the complete video…')
+        joined = work/'joined.mp4' if titles else pending
         run([ffmpeg, '-v', 'error', '-nostdin', '-n', '-f', 'concat', '-safe', '1', '-i', str(concat),
-             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', str(pending)], log)
+             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', str(joined)], log)
+        if titles:
+            progress('Adding timed titles and captions…')
+            args = [ffmpeg, '-v', 'error', '-nostdin', '-n', '-i', str(joined)]
+            filters = []
+            previous = '0:v'
+            for i, (item, (x, y)) in enumerate(zip(titles, cards)):
+                args += ['-i', str(work/f'title-{i}.png')]
+                start, end = round(item['start']*24), round(item['end']*24)
+                filters.append(f'[{previous}][{i+1}:v]overlay={x}:{y}:enable=\'gte(n,{start})*lt(n,{end})\'[v{i}]')
+                previous = f'v{i}'
+            args += ['-filter_complex_threads', '1', '-filter_complex', ';'.join(filters),
+                     '-map', f'[{previous}]', '-map', '0:a:0', '-c:v', 'libx264', '-preset', 'veryfast',
+                     '-crf', '20', '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'copy',
+                     '-movflags', '+faststart', str(pending)]
+            run(args, log)
         run([sys.executable, str(WORKER), 'verify', 'cartoon', str(work/'expected.json'), str(pending)], log)
         # Atomic no-overwrite publication on the output volume (Windows NTFS).
         os.link(pending, output)

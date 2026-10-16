@@ -49,9 +49,10 @@ cleanup is not part of this milestone.
 ## Still outside this milestone
 
 This is section-level sequencing, not a single scene/limb editor. No crossfades,
-shared soundtrack, captions, undo, live mixed playback, export cancellation or
+shared soundtrack, undo, live mixed playback, export cancellation or
 mixed portable executable yet. The window blocks editing/closing during export;
 individual source editors retain their existing capabilities. Manual listening,
 another-computer validation and the full 10-minute endurance case remain untested.
 
-Next: editable timed titles, dates, source labels and captions across both renderers.
+Timed titles, dates, source labels and captions are now implemented across both
+renderers; see [timed text instructions and validation](timed-titles.md).
