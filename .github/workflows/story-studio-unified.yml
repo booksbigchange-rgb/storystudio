@@ -1,0 +1,76 @@
+name: StoryStudio unified Windows regressions
+on:
+  push:
+    branches: [feature/unified-story-studio]
+    paths: ['engine/**', 'tests/**', '.github/workflows/story-studio-unified.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: unified-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-regression:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/cache/pip
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/cache/pycache
+      STORYSTUDIO_TEMP: ${{ github.workspace }}/temp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned dependencies and record provenance
+        run: |
+          New-Item -Force -ItemType Directory exports, artifacts, temp, tools/ffmpeg | Out-Null
+          python -m pip install --index-url https://pypi.org/simple --report artifacts/dependencies.json Pillow==12.3.0 playwright==1.55.0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Verify official FFmpeg archive and install inside workspace
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+          Invoke-WebRequest $url -OutFile temp/ffmpeg.zip
+          Invoke-WebRequest "$url.sha256" -OutFile temp/ffmpeg.sha256
+          $published=[regex]::Match((Get-Content temp/ffmpeg.sha256 -Raw),'[a-fA-F0-9]{64}').Value.ToUpper()
+          $actual=(Get-FileHash temp/ffmpeg.zip -Algorithm SHA256).Hash
+          if ($actual -ne $published) { throw 'FFmpeg checksum mismatch' }
+          Expand-Archive temp/ffmpeg.zip temp/ffmpeg-unpacked
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            $binary=Get-ChildItem temp/ffmpeg-unpacked -Recurse -Filter $name | Select-Object -First 1
+            if (-not $binary) { throw "Missing $name" }
+            Copy-Item $binary.FullName tools/ffmpeg/
+          }
+          @{url=$url;sha256=$actual;version=(& tools/ffmpeg/ffmpeg.exe -version | Select-Object -First 1)} | ConvertTo-Json | Set-Content artifacts/ffmpeg-provenance.json
+      - name: Existing editor and title unit regressions
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unified unit tests failed' }
+          python -m unittest discover -s integrations/lemo-lite/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Character unit tests failed' }
+      - name: Actual Windows GUI and decoded mixed-engine titles in both formats
+        run: |
+          python tests/mixed_titles_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'GUI and MP4 acceptance failed' }
+          python tests/mixed_cancel_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Real GUI cancellation and retry failed' }
+          python tests/templates_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Documentary template GUI and exports failed' }
+          python tests/layer_keys_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Layer keyframe GUI and decoded motion failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unified-titles-windows-evidence
+          path: |
+            artifacts/
+            exports/titles-acceptance-*/
+            exports/mixed-cancel-*/
+            exports/templates-acceptance-*/
+            exports/layer-keys-acceptance-*/
+            exports/mixed-run-*/render.log
+          retention-days: 14
