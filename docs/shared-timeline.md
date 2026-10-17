@@ -49,8 +49,10 @@ cleanup is not part of this milestone.
 ## Still outside this milestone
 
 This is section-level sequencing, not a single scene/limb editor. No crossfades,
-shared soundtrack, undo, live mixed playback, export cancellation or
+shared soundtrack, undo, live mixed playback or
 mixed portable executable yet. The window blocks editing/closing during export;
+**Cancel export** stops its process tree and restores editing; see
+[cancellation validation](mixed-export-cancellation.md).
 individual source editors retain their existing capabilities. Manual listening,
 another-computer validation and the full 10-minute endurance case remain untested.
 

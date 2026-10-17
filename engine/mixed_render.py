@@ -1,29 +1,21 @@
 """Render immutable source snapshots, normalize sections and publish verified MP4."""
 import json
-import os
 from pathlib import Path
-import subprocess
 import sys
 import uuid
 from mixed_project import validate, FORMATS
 from studio_hub import project_kind
 from mixed_titles import validate_titles, card
+from mixed_control import MixedControl
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = Path(__file__).with_name('mixed_worker.py')
-FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
-def run(command, log):
-    result = subprocess.run(command, capture_output=True, text=True, creationflags=FLAGS)
-    with log.open('a', encoding='utf-8') as handle:
-        handle.write(result.stdout + result.stderr + '\n')
-    if result.returncode:
-        raise RuntimeError(f'Export step failed. See {log}\n'+(result.stderr or result.stdout)[-800:])
-    return result.stdout
-
-
-def export(doc, output, progress=lambda _: None):
+def export(doc, output, progress=lambda _: None, control=None):
+    control = control or MixedControl()
+    control.check()
+    run = control.run
     doc = validate(doc)
     if not doc['sections']:
         raise ValueError('Add at least one section')
@@ -72,10 +64,10 @@ def export(doc, output, progress=lambda _: None):
                  '-af', 'aresample=48000,apad', '-ac', '2', '-ar', '48000',
                  '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-threads', '2',
                  '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
-                 '-c:a', 'pcm_s16le', '-t', str(seconds), str(work/f'section-{i}.mkv')]
+                 '-c:a', 'pcm_s16le', '-video_track_timescale', '24000', '-t', str(seconds), str(work/f'section-{i}.mov')]
         run(args, log)
     concat = work/'sections.txt'
-    concat.write_text(''.join(f"file 'section-{i}.mkv'\n" for i in range(len(sections))), encoding='utf-8')
+    concat.write_text(''.join(f"file 'section-{i}.mov'\n" for i in range(len(sections))), encoding='utf-8')
     pending = output.with_name('.'+output.stem+'.'+uuid.uuid4().hex+'.partial.mp4')
     try:
         progress('Joining sections and checking the complete video…')
@@ -99,7 +91,7 @@ def export(doc, output, progress=lambda _: None):
             run(args, log)
         run([sys.executable, str(WORKER), 'verify', 'cartoon', str(work/'expected.json'), str(pending)], log)
         # Atomic no-overwrite publication on the output volume (Windows NTFS).
-        os.link(pending, output)
+        control.publish(pending, output)
         (work/'result.json').write_text(json.dumps(dict(status='passed', output=str(output), duration=duration,
             width=width, height=height, sections=len(sections)), indent=2), encoding='utf-8')
     finally:

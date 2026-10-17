@@ -9,6 +9,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import mixed_project as model
+from mixed_control import MixedControl, RenderCancelled
 from studio_hub import ROOT, command, project_kind
 
 
@@ -19,6 +20,7 @@ class MixedEditor:
         self.path = Path(path) if path else None
         self.dirty = False
         self.busy = False
+        self.control = None
         self.events = queue.Queue()
         root.title('StoryStudio · Shared timeline')
         root.geometry('940x570')
@@ -44,6 +46,8 @@ class MixedEditor:
             self.buttons.append(b)
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill='x', pady=6)
+        self.cancel_button = ttk.Button(toolbar, text='Cancel export', command=self.cancel_export, state='disabled')
+        self.cancel_button.pack(side='right', padx=3)
         for label, action in [('Add project', self.add), ('Edit source', self.edit), ('Move up', lambda:self.move(-1)),
                               ('Move down', lambda:self.move(1)), ('Remove', self.remove)]:
             b = ttk.Button(toolbar, text=label, command=action)
@@ -196,6 +200,8 @@ class MixedEditor:
             return
         doc = copy.deepcopy(self.doc)
         self.busy = True
+        self.control = MixedControl()
+        self.cancel_button.state(['!disabled'])
         for button in self.buttons:
             button.state(['disabled'])
         self.selector.configure(state='disabled')
@@ -203,11 +209,19 @@ class MixedEditor:
         def worker():
             try:
                 from mixed_render import export
-                output = export(doc, path, lambda text:self.events.put(('status',text)))
+                output = export(doc, path, lambda text:self.events.put(('status',text)), control=self.control)
                 self.events.put(('done',str(output)))
+            except RenderCancelled as exc:
+                self.events.put(('cancelled',str(exc)))
             except Exception as exc:
                 self.events.put(('error',str(exc)))
         threading.Thread(target=worker, daemon=True).start()
+
+    def cancel_export(self):
+        if self.busy and self.control:
+            self.control.cancel()
+            self.cancel_button.state(['disabled'])
+            self.status.set('Canceling export and stopping its processes…')
 
     def poll(self):
         while not self.events.empty():
@@ -215,6 +229,7 @@ class MixedEditor:
             self.status.set(text)
             if kind != 'status':
                 self.busy = False
+                self.cancel_button.state(['disabled'])
                 for button in self.buttons:
                     button.state(['!disabled'])
                 self.selector.configure(state='readonly')
@@ -224,7 +239,7 @@ class MixedEditor:
 
     def close(self):
         if self.busy:
-            self.status.set('Wait for this export to finish before closing.')
+            self.status.set('Cancel export or wait for it to finish before closing.')
         elif self.discard():
             self.root.after_cancel(self.poll_id)
             self.root.destroy()

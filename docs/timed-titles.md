@@ -51,5 +51,6 @@ Neither linked project format is converted or overwritten. Shared exports remain
 
 The existing packaged cartoon EXE is unchanged; this feature belongs to the
 source unified app. A combined portable executable, live mixed playback,
-crossfades, shared mixing and mixed-export cancellation remain separate work.
+crossfades and shared mixing remain separate work. Mixed-export cancellation is
+implemented separately; see `mixed-export-cancellation.md` for its validation.
 Automated checks do not establish manual listening or usability acceptance.

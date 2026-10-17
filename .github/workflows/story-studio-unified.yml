@@ -56,6 +56,8 @@ jobs:
         run: |
           python tests/mixed_titles_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'GUI and MP4 acceptance failed' }
+          python tests/mixed_cancel_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Real GUI cancellation and retry failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -63,5 +65,6 @@ jobs:
           path: |
             artifacts/
             exports/titles-acceptance-*/
+            exports/mixed-cancel-*/
             exports/mixed-run-*/render.log
           retention-days: 14
