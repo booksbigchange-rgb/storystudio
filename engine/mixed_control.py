@@ -58,7 +58,11 @@ class MixedControl(RenderControl):
     def run(self, command, log):
         self.check()
         gate = Path(__file__).with_name('export_gate.py')
-        process = subprocess.Popen([sys.executable, str(gate), *map(str, command)],
+        # A Windows venv executable is itself a launcher that may spawn its real
+        # interpreter before job assignment. Start the base interpreter directly
+        # for this stdlib-only gate; the requested worker still uses its venv.
+        interpreter = getattr(sys, '_base_executable', sys.executable)
+        process = subprocess.Popen([interpreter, str(gate), *map(str, command)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
         job = None
