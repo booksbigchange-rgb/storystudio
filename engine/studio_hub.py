@@ -109,13 +109,18 @@ def main():
     from tkinter import ttk, filedialog, messagebox
     root = tk.Tk()
     root.title('StoryStudio · Choose your workspace')
-    root.geometry('620x390')
+    root.geometry('620x440')
     frame = ttk.Frame(root, padding=24)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='STORYSTUDIO', font=('Segoe UI', 22, 'bold')).pack(anchor='w')
     ttk.Label(frame, text='Choose a workspace or open an existing project.', padding=(0,12)).pack(anchor='w')
     def launch(kind, path=None):
         subprocess.Popen(command(kind, path), cwd=ROOT)
+    def templates():
+        from template_editor import TemplateEditor
+        TemplateEditor(root, ROOT/'projects', launch)
+    ttk.Button(frame, text='Documentary templates · evidence, chronology and map focus',
+               command=templates).pack(fill='x', pady=6)
     ttk.Button(frame, text='Shared timeline · combine documentary and character sections',
                command=lambda: launch('mixed')).pack(fill='x', pady=6)
     ttk.Button(frame, text='Dark documentary · artwork, camera, layers and audio',
