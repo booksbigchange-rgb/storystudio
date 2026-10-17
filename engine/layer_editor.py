@@ -30,6 +30,7 @@ class LayerEditor:
         for label, command in [('Add artwork', self.add), ('Remove', self.remove),
                                ('Move behind', lambda: self.move(-1)), ('Move forward', lambda: self.move(1))]:
             ttk.Button(bar, text=label, command=command).pack(side='left', padx=2)
+        ttk.Button(bar, text='Motion keys…', command=self.edit_keys).pack(side='left', padx=2)
         self.name = tk.StringVar(self.window)
         self.easing = tk.StringVar(self.window, 'smooth')
         metadata = ttk.Frame(frame)
@@ -79,6 +80,11 @@ class LayerEditor:
         except (ValueError, TypeError) as exc:
             messagebox.showerror('Invalid layer', str(exc), parent=self.window)
             return False
+
+    def edit_keys(self):
+        if self.current is not None and self.store():
+            from layer_keys_editor import LayerKeysEditor
+            return LayerKeysEditor(self)
 
     def refresh(self, selected):
         self.items.delete(0, 'end')

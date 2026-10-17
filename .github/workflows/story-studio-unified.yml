@@ -60,6 +60,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Real GUI cancellation and retry failed' }
           python tests/templates_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Documentary template GUI and exports failed' }
+          python tests/layer_keys_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Layer keyframe GUI and decoded motion failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -69,5 +71,6 @@ jobs:
             exports/titles-acceptance-*/
             exports/mixed-cancel-*/
             exports/templates-acceptance-*/
+            exports/layer-keys-acceptance-*/
             exports/mixed-run-*/render.log
           retention-days: 14

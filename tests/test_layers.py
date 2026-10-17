@@ -31,3 +31,24 @@ class LayerTests(unittest.TestCase):
             self.assertEqual(layer_values({'layers':[preset]})[0], preset)
         self.assertEqual(motion_preset(original, 'Slow reveal')['start']['opacity'], 0)
         self.assertEqual(original['start']['opacity'], 1)
+
+    def test_interior_keys_change_direction_and_are_seek_safe(self):
+        layer=layer_values({'layers':[dict(image='art.png',easing='linear',start={'x':.2},end={'x':.2},
+            keyframes=[dict(t=.5,pose={'x':.8,'angle':90,'opacity':.4})])]})[0]
+        self.assertAlmostEqual(pose_at(layer,.25)['x'],.5)
+        self.assertAlmostEqual(pose_at(layer,.5)['x'],.8)
+        self.assertAlmostEqual(pose_at(layer,.75)['x'],.5)
+        expected=pose_at(layer,.3);pose_at(layer,.9)
+        self.assertEqual(pose_at(layer,.3),expected)
+        self.assertEqual(pose_at(layer,.5)['angle'],90)
+        self.assertEqual(pose_at(layer,.5)['opacity'],.4)
+        self.assertEqual(motion_preset(layer,'Slow reveal')['keyframes'],layer['keyframes'])
+
+    def test_bad_interior_keys_rejected(self):
+        for keys in [None,[None],[dict(t=0,pose={})],[dict(t=1,pose={})],
+                     [dict(t=True,pose={})],[dict(t=float('nan'),pose={})],
+                     [dict(t=.5,pose={'size':0})],[dict(t=.5,pose={})]*2,
+                     [dict(t=.7,pose={}),dict(t=.3,pose={})],
+                     [dict(t=i/20,pose={}) for i in range(1,18)]]:
+            with self.subTest(keys=keys),self.assertRaises(ValueError):
+                layer_values({'layers':[dict(image='art.png',keyframes=keys)]})

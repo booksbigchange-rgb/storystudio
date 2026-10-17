@@ -35,13 +35,33 @@ def layer_values(scene):
         name = layer.get('name', Path(layer['image']).stem)
         if not isinstance(name, str) or not name.strip() or len(name) > 80:
             raise ValueError('Layer name must contain 1–80 characters')
-        result.append(dict(image=layer['image'], name=name, easing=easing,
+        keys = layer.get('keyframes', [])
+        if not isinstance(keys, list) or len(keys)>16:
+            raise ValueError('Use at most 16 interior keys per layer')
+        normalized = []
+        previous = 0
+        for key in keys:
+            if not isinstance(key, dict):
+                raise ValueError('Each layer key needs a time and pose')
+            t = key.get('t')
+            if type(t) not in (int,float) or not math.isfinite(t) or not previous<t<1:
+                raise ValueError('Layer keys must have increasing times strictly between 0 and 1')
+            normalized.append(dict(t=t, pose=pose_values(key.get('pose'))))
+            previous = t
+        result.append(dict(image=layer['image'], name=name, easing=easing, keyframes=normalized,
                            start=pose_values(layer.get('start', {})), end=pose_values(layer.get('end', {}))))
     return result
 
 
 def pose_at(layer, progress):
     t = min(1, max(0, progress))
+    points = [dict(t=0,pose=layer['start']), *layer.get('keyframes',[]), dict(t=1,pose=layer['end'])]
+    left,right = points[0],points[-1]
+    for a,b in zip(points,points[1:]):
+        if t<=b['t']:
+            left,right=a,b
+            break
+    t=(t-left['t'])/(right['t']-left['t'])
     easing = layer['easing']
     if easing == 'smooth':
         t = t*t*(3-2*t)
@@ -49,7 +69,7 @@ def pose_at(layer, progress):
         t *= t
     elif easing == 'ease-out':
         t = 1-(1-t)**2
-    return {k: layer['start'][k]+(layer['end'][k]-layer['start'][k])*t for k in POSE}
+    return {k: left['pose'][k]+(right['pose'][k]-left['pose'][k])*t for k in POSE}
 
 
 def motion_preset(layer, name):

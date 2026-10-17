@@ -46,7 +46,7 @@ without converting legacy scenes; see `shared-timeline.md` for current capabilit
 1. Section-level mixed timeline is now implemented; see `shared-timeline.md`. Individual scene unification remains later work.
 2. Timed titles, dates, sources and captions are implemented; see `timed-titles.md` for validation and limits.
 3. Evidence desk, chronology and supplied-image map-focus starters are implemented; see `documentary-templates.md` for validation and limits.
-4. Layer interior keys, anchors, masks and camera-linked depth.
+4. Layer interior motion keys are implemented; see `layer-motion-keys.md`. Anchors, masks and camera-linked depth remain pending.
 5. Shared narration/music/SFX mixing with ducking.
 6. Longer-story management and endurance tests beyond the cartoon 120-second limit.
 7. Expand reusable rigs to the documentary visual style; imported rigging and lip-sync.
