@@ -36,3 +36,18 @@ section files after cancellation. Automatic disk cleanup remains separate work.
 This is the unified Windows source app. The previous portable cartoon executable
 is unchanged. Manual usability and another physical computer remain separate
 from local automated tests and the hosted Windows runner.
+
+## Verified result
+
+Application commit `35afa18` passed [Windows run 39028796017](https://github.com/booksbigchange-rgb/storystudio/actions/runs/39028796017):
+64 unified unit tests, 12 character unit tests, actual cancellation/retry and
+mixed-engine/title exports in both formats. Local cancellation/retry also passed
+on that commit; the dual-format regression passed before its stdlib gate-launch
+refinement and passed again on the final commit in CI.
+
+- [Hosted evidence ZIP](https://github.com/booksbigchange-rgb/storystudio/actions/runs/39028796017/artifacts/12099571555)
+  expires 31 October 2026 at 14:29 EAT.
+- Local evidence: `exports/mixed-cancel-validation-35afa18.zip`.
+- Final local cancellation: `exports/mixed-cancel-0d4ba393b7cc4ab9b19b82506fb3c2a9/`.
+- Local dual-format regression: `exports/titles-acceptance-8bf3bd3113cd4b55a44020c03e5d2798/`.
+- Changes remain on `feature/unified-story-studio` in draft PR #7; main untouched.
