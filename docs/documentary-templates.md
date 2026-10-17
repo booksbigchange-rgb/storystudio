@@ -47,3 +47,15 @@ automatic fact research and multilingual font coverage remain outside this miles
 
 The feature belongs to the unified source application. The previous packaged
 cartoon EXE is unchanged; combined Windows packaging remains a later milestone.
+
+## Completed validation
+
+Application commit `dc4f212` passed [Windows run 39029378951](https://github.com/booksbigchange-rgb/storystudio/actions/runs/39029378951):
+all 79 unit tests, real template GUI/export tests, existing timed-text exports and
+cancellation/retry checks. The final template acceptance also passed locally.
+
+- Local evidence: `exports/templates-acceptance-224119b4858441c3b0205e7376e5603b/`.
+- Local downloadable package: `exports/documentary-templates-validation-dc4f212.zip`.
+- [Windows evidence artifact](https://github.com/booksbigchange-rgb/storystudio/actions/runs/39029378951/artifacts/12099309208)
+  expires 31 October 2026 at 14:38 EAT.
+- Feature branch: `feature/unified-story-studio`; draft PR #7; main untouched.
