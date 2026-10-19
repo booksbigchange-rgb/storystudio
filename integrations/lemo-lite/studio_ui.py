@@ -177,6 +177,14 @@ class StudioApp(tk.Tk):
             ttk.Label(params,text=label).grid(row=0,column=col,sticky='w')
             ttk.Entry(params,textvariable=self.fields[key],width=7).grid(row=1,column=col,padx=(0,6),pady=4)
         ttk.Label(motion_tab,text='Position .2–.7 · Size .6–1.25\nSpeed .5–2 · Blink is automatic',foreground=MUTED,wraplength=240).pack(anchor='w',pady=6)
+        ttk.Label(motion_tab,text='MOTION KEYFRAMES',font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(8,3))
+        ttk.Button(motion_tab,text='Add keyframe at playhead',command=self.add_motion_keyframe).pack(fill='x',pady=3)
+        ttk.Button(motion_tab,text='Remove nearest keyframe',command=self.remove_motion_keyframe).pack(fill='x',pady=3)
+        self.keyframe_list=tk.Listbox(motion_tab,height=4,exportselection=False,relief='flat',borderwidth=0,bg=WHITE,fg=INK,selectbackground=GREEN,selectforeground=WHITE)
+        self.keyframe_list.pack(fill='x',pady=5)
+        self.keyframe_list.bind('<<ListboxSelect>>',self.select_motion_keyframe)
+        self.keyframe_hint=ttk.Label(motion_tab,text='Move playhead, set Position, then add a keyframe.',foreground=MUTED,wraplength=240)
+        self.keyframe_hint.pack(anchor='w',pady=3)
         ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=8)
         ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
@@ -247,7 +255,7 @@ class StudioApp(tk.Tk):
         self.scrubber.configure(to=project.total_duration(self.document))
         self.time.set(min(self.time.get(),project.total_duration(self.document)))
         self.preview_heading.configure(text='STAGE  /  '+self.document['format'])
-        self.draw_timeline();self.draw_snapshot()
+        self.draw_timeline();self.draw_snapshot();self.refresh_motion_keys()
 
     def select_scene(self,_=None):
         index=self.selected()
@@ -267,8 +275,59 @@ class StudioApp(tk.Tk):
         if doc != self.document:
             self.remember_edit()
             self.document=doc;self.mark_dirty()
-        self.refresh(index);self.request_preview()
+        self.refresh(index);self.refresh_motion_keys();self.request_preview()
         return True
+
+    def refresh_motion_keys(self):
+        if not hasattr(self, 'keyframe_list'):
+            return
+        keys=self.document['scenes'][self.selected()].get('motion', [])
+        self.keyframe_list.delete(0, 'end')
+        for key in keys:
+            self.keyframe_list.insert('end', f"{key['time']:g}s   →   x {key['x']:.3f}")
+        self.keyframe_hint.configure(text=f"{len(keys)}/30 keyframes · playhead {self.time.get():.1f}s")
+
+    def add_motion_keyframe(self):
+        if not self.apply_scene():
+            return
+        index=self.selected()
+        scene=self.document['scenes'][index]
+        moment=max(0.0,min(float(scene['duration']),self.time.get()-sum(s['duration'] for s in self.document['scenes'][:index])))
+        keys=scene.setdefault('motion', [])
+        if len(keys)>=30 and not any(abs(k['time']-moment)<0.001 for k in keys):
+            self.status.set('This scene already has 30 keyframes.')
+            return
+        self.remember_edit()
+        keys[:]=[k for k in keys if abs(k['time']-moment)>=0.001]
+        keys.append({'time':round(moment,3),'x':float(self.fields['x'].get())})
+        keys.sort(key=lambda k:k['time'])
+        self.document=project.validate(self.document)
+        self.mark_dirty();self.refresh_motion_keys();self.request_preview()
+        self.status.set(f"Motion keyframe saved at {moment:.2f}s.")
+
+    def remove_motion_keyframe(self):
+        scene=self.document['scenes'][self.selected()]
+        keys=scene.get('motion', [])
+        if not keys:
+            self.status.set('There are no motion keyframes to remove.')
+            return
+        selected=self.keyframe_list.curselection()
+        if selected: target=keys[selected[0]]
+        else:
+            local=self.time.get()-sum(s['duration'] for s in self.document['scenes'][:self.selected()])
+            target=min(keys,key=lambda k:abs(k['time']-local))
+        self.remember_edit();keys.remove(target)
+        self.document=project.validate(self.document)
+        self.mark_dirty();self.refresh_motion_keys();self.request_preview()
+        self.status.set(f"Removed keyframe at {target['time']:.2f}s.")
+
+    def select_motion_keyframe(self, _=None):
+        selected=self.keyframe_list.curselection()
+        if not selected:return
+        key=self.document['scenes'][self.selected()].get('motion', [])[selected[0]]
+        start=sum(s['duration'] for s in self.document['scenes'][:self.selected()])
+        self.time.set(start+key['time']);self.fields['x'].set(f"{key['x']:.3f}")
+        self.scrub()
 
     def apply_output(self,_=None):
         if self.document['format'] != self.format_var.get() or self.document['quality'] != self.quality_var.get():
