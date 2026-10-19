@@ -330,7 +330,7 @@ class StudioApp(tk.Tk):
         key=self.document['scenes'][self.selected()].get('motion', [])[selected[0]]
         start=sum(s['duration'] for s in self.document['scenes'][:self.selected()])
         self.time.set(start+key['time']);self.fields['x'].set(f"{key['x']:.3f}")
-        self.scrub()
+        self.scrub();self.request_preview()
 
     def apply_output(self,_=None):
         if self.document['format'] != self.format_var.get() or self.document['quality'] != self.quality_var.get():
