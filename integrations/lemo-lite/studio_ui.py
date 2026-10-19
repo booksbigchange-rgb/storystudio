@@ -42,6 +42,8 @@ class StudioApp(tk.Tk):
         self.document = project.new_project()
         self.project_path = None
         self.dirty = False
+        self.undo_stack = []
+        self.redo_stack = []
         self.busy = False
         self.preview_busy = False
         self.preview_pending = False
@@ -53,6 +55,8 @@ class StudioApp(tk.Tk):
         self.closing = False
         self.revision = 0
         self._photo = None
+        self._stage_image_bounds = None
+        self._drag_x = None
         self.time = tk.DoubleVar(value=0)
         self.status = tk.StringVar(value='Ready. Choose a character, add a scene, and make it move.')
         self.audio_label = tk.StringVar(value='Original chimes · no narration selected')
@@ -62,6 +66,8 @@ class StudioApp(tk.Tk):
         self._build()
         self.refresh(0)
         self.protocol('WM_DELETE_WINDOW', self.exit_app)
+        self.bind('<Control-z>', lambda _: self.undo())
+        self.bind('<Control-y>', lambda _: self.redo())
         self.bind('<Control-s>', lambda _: self.save_project())
         self.bind('<Control-o>', lambda _: self.open_project())
         self.bind('<Control-e>', lambda _: self.export_video())
@@ -126,6 +132,9 @@ class StudioApp(tk.Tk):
                                   font=('Segoe UI',11),activestyle='none')
         self.scene_list.pack(fill='both',expand=True)
         self.scene_list.bind('<<ListboxSelect>>',self.select_scene)
+        history=ttk.Frame(left);history.pack(fill='x',pady=(0,5))
+        ttk.Button(history,text='Undo',style='Small.TButton',command=self.undo).pack(side='left',fill='x',expand=True)
+        ttk.Button(history,text='Redo',style='Small.TButton',command=self.redo).pack(side='left',fill='x',expand=True)
         self.add_button=ttk.Button(left,text='+ Add scene',command=self.add_scene)
         self.add_button.pack(fill='x',pady=(8,4))
         row=ttk.Frame(left);row.pack(fill='x')
@@ -168,6 +177,14 @@ class StudioApp(tk.Tk):
             ttk.Label(params,text=label).grid(row=0,column=col,sticky='w')
             ttk.Entry(params,textvariable=self.fields[key],width=7).grid(row=1,column=col,padx=(0,6),pady=4)
         ttk.Label(motion_tab,text='Position .2–.7 · Size .6–1.25\nSpeed .5–2 · Blink is automatic',foreground=MUTED,wraplength=240).pack(anchor='w',pady=6)
+        ttk.Label(motion_tab,text='MOTION KEYFRAMES',font=('Segoe UI',9,'bold')).pack(anchor='w',pady=(8,3))
+        ttk.Button(motion_tab,text='Add keyframe at playhead',command=self.add_motion_keyframe).pack(fill='x',pady=3)
+        ttk.Button(motion_tab,text='Remove nearest keyframe',command=self.remove_motion_keyframe).pack(fill='x',pady=3)
+        self.keyframe_list=tk.Listbox(motion_tab,height=4,exportselection=False,relief='flat',borderwidth=0,bg=WHITE,fg=INK,selectbackground=GREEN,selectforeground=WHITE)
+        self.keyframe_list.pack(fill='x',pady=5)
+        self.keyframe_list.bind('<<ListboxSelect>>',self.select_motion_keyframe)
+        self.keyframe_hint=ttk.Label(motion_tab,text='Move playhead, set Position, then add a keyframe.',foreground=MUTED,wraplength=240)
+        self.keyframe_hint.pack(anchor='w',pady=3)
         ttk.Button(motion_tab,text='Apply character edits',style='Accent.TButton',command=self.apply_scene).pack(fill='x',pady=8)
         ttk.Label(export_tab,text='Video format',foreground=MUTED).pack(anchor='w',pady=(8,3))
         self.format_combo=ttk.Combobox(export_tab,textvariable=self.format_var,values=list(project.FORMATS),state='readonly')
@@ -189,12 +206,38 @@ class StudioApp(tk.Tk):
         self.stage=tk.Canvas(middle,bg='#dce8e1',highlightthickness=0)
         self.stage.pack(fill='both',expand=True)
         self.stage.bind('<Configure>',lambda _:self.draw_snapshot())
+        self.stage.bind('<ButtonPress-1>',self.stage_drag_start)
+        self.stage.bind('<B1-Motion>',self.stage_drag_motion)
+        self.stage.bind('<ButtonRelease-1>',self.stage_drag_end)
         self.snapshot=None
+        ttk.Label(middle,text='Drag horizontally on the stage to position the character',foreground=MUTED).pack(anchor='w')
         ttk.Label(middle,text='Frame preview · use Play live preview to watch motion',foreground=MUTED).pack(anchor='w',pady=8)
 
     def selected(self):
         selected=self.scene_list.curselection()
         return selected[0] if selected else 0
+
+    def remember_edit(self):
+        self.undo_stack.append((copy.deepcopy(self.document), self.selected()))
+        if len(self.undo_stack) > 50:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def undo(self):
+        if self.busy or not self.undo_stack:
+            return
+        self.redo_stack.append((copy.deepcopy(self.document), self.selected()))
+        self.document, index = self.undo_stack.pop()
+        self.mark_dirty();self.refresh(index);self.select_scene();self.request_preview()
+        self.status.set('Undo complete. Save your project to keep this version.')
+
+    def redo(self):
+        if self.busy or not self.redo_stack:
+            return
+        self.undo_stack.append((copy.deepcopy(self.document), self.selected()))
+        self.document, index = self.redo_stack.pop()
+        self.mark_dirty();self.refresh(index);self.select_scene();self.request_preview()
+        self.status.set('Redo complete. Save your project to keep this version.')
 
     def mark_dirty(self):
         self.dirty=True;self.revision+=1
@@ -212,7 +255,7 @@ class StudioApp(tk.Tk):
         self.scrubber.configure(to=project.total_duration(self.document))
         self.time.set(min(self.time.get(),project.total_duration(self.document)))
         self.preview_heading.configure(text='STAGE  /  '+self.document['format'])
-        self.draw_timeline();self.draw_snapshot()
+        self.draw_timeline();self.draw_snapshot();self.refresh_motion_keys()
 
     def select_scene(self,_=None):
         index=self.selected()
@@ -223,16 +266,75 @@ class StudioApp(tk.Tk):
     def apply_scene(self):
         index=self.selected();doc=copy.deepcopy(self.document)
         scene={key:var.get() for key,var in self.fields.items()}
+        # Motion is document data, not an editable text field. Preserve it when
+        # applying ordinary scene/character edits so keyframes survive changes.
+        scene['motion']=copy.deepcopy(doc['scenes'][index].get('motion', []))
         try:
             for key in ('duration','x','size','speed'):scene[key]=float(scene[key])
             doc['scenes'][index]=scene
             doc=project.validate(doc)
         except (ValueError,TypeError) as exc:
             self.status.set(str(exc));return False
-        self.document=doc;self.mark_dirty();self.refresh(index);self.request_preview()
+        if doc != self.document:
+            self.remember_edit()
+            self.document=doc;self.mark_dirty()
+        self.refresh(index);self.refresh_motion_keys();self.request_preview()
         return True
 
+    def refresh_motion_keys(self):
+        if not hasattr(self, 'keyframe_list'):
+            return
+        keys=self.document['scenes'][self.selected()].get('motion', [])
+        self.keyframe_list.delete(0, 'end')
+        for key in keys:
+            self.keyframe_list.insert('end', f"{key['time']:g}s   →   x {key['x']:.3f}")
+        self.keyframe_hint.configure(text=f"{len(keys)}/30 keyframes · playhead {self.time.get():.1f}s")
+
+    def add_motion_keyframe(self):
+        if not self.apply_scene():
+            return
+        index=self.selected()
+        scene=self.document['scenes'][index]
+        moment=max(0.0,min(float(scene['duration']),self.time.get()-sum(s['duration'] for s in self.document['scenes'][:index])))
+        keys=scene.setdefault('motion', [])
+        if len(keys)>=30 and not any(abs(k['time']-moment)<0.001 for k in keys):
+            self.status.set('This scene already has 30 keyframes.')
+            return
+        self.remember_edit()
+        keys[:]=[k for k in keys if abs(k['time']-moment)>=0.001]
+        keys.append({'time':round(moment,3),'x':float(self.fields['x'].get())})
+        keys.sort(key=lambda k:k['time'])
+        self.document=project.validate(self.document)
+        self.mark_dirty();self.refresh_motion_keys();self.request_preview()
+        self.status.set(f"Motion keyframe saved at {moment:.2f}s.")
+
+    def remove_motion_keyframe(self):
+        scene=self.document['scenes'][self.selected()]
+        keys=scene.get('motion', [])
+        if not keys:
+            self.status.set('There are no motion keyframes to remove.')
+            return
+        selected=self.keyframe_list.curselection()
+        if selected: target=keys[selected[0]]
+        else:
+            local=self.time.get()-sum(s['duration'] for s in self.document['scenes'][:self.selected()])
+            target=min(keys,key=lambda k:abs(k['time']-local))
+        self.remember_edit();keys.remove(target)
+        self.document=project.validate(self.document)
+        self.mark_dirty();self.refresh_motion_keys();self.request_preview()
+        self.status.set(f"Removed keyframe at {target['time']:.2f}s.")
+
+    def select_motion_keyframe(self, _=None):
+        selected=self.keyframe_list.curselection()
+        if not selected:return
+        key=self.document['scenes'][self.selected()].get('motion', [])[selected[0]]
+        start=sum(s['duration'] for s in self.document['scenes'][:self.selected()])
+        self.time.set(start+key['time']);self.fields['x'].set(f"{key['x']:.3f}")
+        self.scrub();self.request_preview()
+
     def apply_output(self,_=None):
+        if self.document['format'] != self.format_var.get() or self.document['quality'] != self.quality_var.get():
+            self.remember_edit()
         self.document['format']=self.format_var.get();self.document['quality']=self.quality_var.get()
         self.mark_dirty();self.refresh(self.selected());self.request_preview()
 
@@ -246,16 +348,17 @@ class StudioApp(tk.Tk):
         doc=copy.deepcopy(self.document);index=self.selected()+1;doc['scenes'].insert(index,scene)
         try:doc=project.validate(doc)
         except ValueError as exc:self.status.set(str(exc));return
-        self.document=doc;self.mark_dirty();self.refresh(index);self.select_scene()
+        self.remember_edit();self.document=doc;self.mark_dirty();self.refresh(index);self.select_scene()
 
     def remove_scene(self):
         if len(self.document['scenes'])==1:self.status.set('Keep at least one scene.');return
-        index=self.selected();self.document['scenes'].pop(index)
+        index=self.selected();self.remember_edit();self.document['scenes'].pop(index)
         self.mark_dirty();self.refresh(index);self.select_scene()
 
     def move_scene(self,delta):
         index=self.selected();target=index+delta
         if 0<=target<len(self.document['scenes']):
+            self.remember_edit()
             scenes=self.document['scenes'];scenes[index],scenes[target]=scenes[target],scenes[index]
             self.mark_dirty();self.refresh(target);self.select_scene()
 
@@ -270,6 +373,9 @@ class StudioApp(tk.Tk):
             end=start+scene['duration'];x1=start/total*width;x2=end/total*width
             self.timeline.create_rectangle(x1+2,3,x2-2,43,fill=GREEN if i==self.selected() else '#abcbbb',outline='')
             if x2-x1>60:self.timeline.create_text((x1+x2)/2,23,text=f"{i+1:02d} · {scene['duration']:g}s",fill=WHITE if i==self.selected() else INK)
+            for key in scene.get('motion', []):
+                kx=(start+key['time'])/total*width
+                self.timeline.create_oval(kx-3,35,kx+3,41,fill='#f0b44f',outline='#ffffff')
             start=end
         x=self.time.get()/total*width;self.timeline.create_line(x,0,x,46,fill='#e8ab50',width=3)
 
@@ -281,11 +387,47 @@ class StudioApp(tk.Tk):
             start+=scene['duration']
         self.refresh(index);self.time.set(moment);self.scrub()
 
+    def stage_drag_start(self,event):
+        bounds=self._stage_image_bounds
+        if not bounds or self.busy:
+            return
+        left,right=bounds
+        if left <= event.x <= right:
+            self._drag_x=self.document['scenes'][self.selected()]['x']
+            self.stage_drag_motion(event)
+
+    def stage_drag_motion(self,event):
+        if self._drag_x is None or not self._stage_image_bounds:
+            return
+        left,right=self._stage_image_bounds
+        position=max(.2,min(.7,(event.x-left)/max(1,right-left)))
+        self.fields['x'].set(f'{position:.3f}')
+        self.status.set(f'Character position: {position:.2f}. Release to apply.')
+
+    def stage_drag_end(self,event):
+        if self._drag_x is None:
+            return
+        before=self._drag_x
+        self._drag_x=None
+        try:
+            after=float(self.fields['x'].get())
+        except ValueError:
+            return
+        if abs(after-before)>0.0005:
+            # When a scene is already animated, dragging the stage should edit
+            # the position at the playhead instead of changing an ignored base X.
+            if self.document['scenes'][self.selected()].get('motion'):
+                self.add_motion_keyframe()
+            else:
+                self.apply_scene()
+
     def draw_snapshot(self):
-        self.stage.delete('all');w=max(1,self.stage.winfo_width());h=max(1,self.stage.winfo_height())
+        self.stage.delete('all');self._stage_image_bounds=None
+        w=max(1,self.stage.winfo_width());h=max(1,self.stage.winfo_height())
         if self.snapshot:
             image=Image.open(io.BytesIO(self.snapshot));image.thumbnail((max(1,w-20),max(1,h-20)))
             self._photo=ImageTk.PhotoImage(image)
+            self._stage_image_bounds=((w-image.width)/2,(w+image.width)/2)
             self.stage.create_image(w/2,h/2,image=self._photo)
         else:
             self.stage.create_text(w/2,h/2,text='Your story starts here.\n\nChoose Refresh frame to see your cartoon.',fill=GREEN,font=('Segoe UI',13),justify='center',width=max(100,w-30))
@@ -352,6 +494,7 @@ class StudioApp(tk.Tk):
 
     def new_project(self):
         if not self.confirm_discard():return
+        self.undo_stack.clear();self.redo_stack.clear()
         self.document=project.new_project();self.project_path=None;self.dirty=False;self.revision+=1
         self.time.set(0);self.snapshot=None;self.refresh();self.title('StoryStudio 2.0 · My cartoon');self.request_preview()
 
@@ -361,6 +504,7 @@ class StudioApp(tk.Tk):
         if path:
             try:
                 doc=project.load(path)
+                self.undo_stack.clear();self.redo_stack.clear()
                 self.document=doc;self.project_path=Path(path);self.dirty=False;self.revision+=1;self.time.set(0)
                 self.refresh();self.title('StoryStudio 2.0 · '+doc['name']);self.request_preview()
             except (ValueError,OSError) as exc:messagebox.showerror('Cannot open project',str(exc),parent=self)
@@ -381,10 +525,12 @@ class StudioApp(tk.Tk):
 
     def import_audio(self):
         path=filedialog.askopenfilename(parent=self,title='Import local narration or audio',filetypes=[('Audio','*.wav *.mp3 *.m4a *.flac *.ogg')])
-        if path:self.document['audio']=str(Path(path).resolve());self.mark_dirty();self.refresh(self.selected())
+        if path:
+            self.remember_edit();self.document['audio']=str(Path(path).resolve());self.mark_dirty();self.refresh(self.selected())
 
     def clear_audio(self):
-        self.document['audio']=None;self.mark_dirty();self.refresh(self.selected())
+        if self.document['audio'] is not None:
+            self.remember_edit();self.document['audio']=None;self.mark_dirty();self.refresh(self.selected())
 
     def export_video(self):
         if self.busy:return

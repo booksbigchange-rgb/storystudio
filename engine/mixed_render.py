@@ -35,22 +35,27 @@ def export(doc, output, progress=lambda _: None, control=None):
     # Snapshot every source before any rendering so editing during an export
     # cannot change scene settings halfway through this render.
     for i, section in enumerate(doc['sections']):
+        control.check()
         if project_kind(section['project']) != section['engine']:
             raise ValueError('Source project no longer matches its section editor')
         snapshot = work/f'source-{i}.json'
         info = json.loads(run([sys.executable, str(WORKER), 'snapshot', section['engine'], section['project'], str(snapshot)], log))
         sections.append((section, snapshot, info['duration']))
+    control.check()
     duration = sum(s[2] for s in sections)
     if duration > 600:
         raise ValueError('Mixed timelines currently support up to 10 minutes')
     titles = validate_titles(doc.get('titles', []), duration)
     cards = []
     for i, item in enumerate(titles):
+        control.check()
         image, xy = card(item, width, height)
         image.save(work/f'title-{i}.png')
         cards.append(xy)
+    control.check()
     (work/'expected.json').write_text(json.dumps(dict(duration=duration, width=width, height=height)), encoding='utf-8')
     for i, (section, snapshot, seconds) in enumerate(sections):
+        control.check()
         progress(f'Rendering section {i+1}/{len(sections)}: {section["name"]}')
         raw = work/f'raw-{i}.mp4'
         run([sys.executable, str(WORKER), 'render', section['engine'], str(snapshot), str(raw)], log)
@@ -66,6 +71,7 @@ def export(doc, output, progress=lambda _: None, control=None):
                  '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
                  '-c:a', 'pcm_s16le', '-video_track_timescale', '24000', '-t', str(seconds), str(work/f'section-{i}.mov')]
         run(args, log)
+    control.check()
     concat = work/'sections.txt'
     concat.write_text(''.join(f"file 'section-{i}.mov'\n" for i in range(len(sections))), encoding='utf-8')
     pending = output.with_name('.'+output.stem+'.'+uuid.uuid4().hex+'.partial.mp4')

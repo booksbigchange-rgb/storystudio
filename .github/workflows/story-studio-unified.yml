@@ -1,8 +1,8 @@
 name: StoryStudio unified Windows regressions
 on:
   push:
-    branches: [feature/unified-story-studio]
-    paths: ['engine/**', 'tests/**', '.github/workflows/story-studio-unified.yml']
+    branches: [feature/unified-story-studio, feature/story-studio-release-readiness]
+    paths: ['engine/**', 'integrations/lemo-lite/**', 'tests/**', 'docs/release-readiness.md', '.github/workflows/story-studio-unified.yml']
   workflow_dispatch:
 permissions:
   contents: read
