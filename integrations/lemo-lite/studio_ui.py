@@ -42,6 +42,8 @@ class StudioApp(tk.Tk):
         self.document = project.new_project()
         self.project_path = None
         self.dirty = False
+        self.undo_stack = []
+        self.redo_stack = []
         self.busy = False
         self.preview_busy = False
         self.preview_pending = False
@@ -62,6 +64,8 @@ class StudioApp(tk.Tk):
         self._build()
         self.refresh(0)
         self.protocol('WM_DELETE_WINDOW', self.exit_app)
+        self.bind('<Control-z>', lambda _: self.undo())
+        self.bind('<Control-y>', lambda _: self.redo())
         self.bind('<Control-s>', lambda _: self.save_project())
         self.bind('<Control-o>', lambda _: self.open_project())
         self.bind('<Control-e>', lambda _: self.export_video())
@@ -126,6 +130,9 @@ class StudioApp(tk.Tk):
                                   font=('Segoe UI',11),activestyle='none')
         self.scene_list.pack(fill='both',expand=True)
         self.scene_list.bind('<<ListboxSelect>>',self.select_scene)
+        history=ttk.Frame(left);history.pack(fill='x',pady=(0,5))
+        ttk.Button(history,text='Undo',style='Small.TButton',command=self.undo).pack(side='left',fill='x',expand=True)
+        ttk.Button(history,text='Redo',style='Small.TButton',command=self.redo).pack(side='left',fill='x',expand=True)
         self.add_button=ttk.Button(left,text='+ Add scene',command=self.add_scene)
         self.add_button.pack(fill='x',pady=(8,4))
         row=ttk.Frame(left);row.pack(fill='x')
@@ -196,6 +203,28 @@ class StudioApp(tk.Tk):
         selected=self.scene_list.curselection()
         return selected[0] if selected else 0
 
+    def remember_edit(self):
+        self.undo_stack.append((copy.deepcopy(self.document), self.selected()))
+        if len(self.undo_stack) > 50:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def undo(self):
+        if self.busy or not self.undo_stack:
+            return
+        self.redo_stack.append((copy.deepcopy(self.document), self.selected()))
+        self.document, index = self.undo_stack.pop()
+        self.mark_dirty();self.refresh(index);self.select_scene();self.request_preview()
+        self.status.set('Undo complete. Save your project to keep this version.')
+
+    def redo(self):
+        if self.busy or not self.redo_stack:
+            return
+        self.undo_stack.append((copy.deepcopy(self.document), self.selected()))
+        self.document, index = self.redo_stack.pop()
+        self.mark_dirty();self.refresh(index);self.select_scene();self.request_preview()
+        self.status.set('Redo complete. Save your project to keep this version.')
+
     def mark_dirty(self):
         self.dirty=True;self.revision+=1
         self.title('StoryStudio 2.0 · '+self.document['name']+' *')
@@ -229,10 +258,15 @@ class StudioApp(tk.Tk):
             doc=project.validate(doc)
         except (ValueError,TypeError) as exc:
             self.status.set(str(exc));return False
-        self.document=doc;self.mark_dirty();self.refresh(index);self.request_preview()
+        if doc != self.document:
+            self.remember_edit()
+            self.document=doc;self.mark_dirty()
+        self.refresh(index);self.request_preview()
         return True
 
     def apply_output(self,_=None):
+        if self.document['format'] != self.format_var.get() or self.document['quality'] != self.quality_var.get():
+            self.remember_edit()
         self.document['format']=self.format_var.get();self.document['quality']=self.quality_var.get()
         self.mark_dirty();self.refresh(self.selected());self.request_preview()
 
@@ -246,16 +280,17 @@ class StudioApp(tk.Tk):
         doc=copy.deepcopy(self.document);index=self.selected()+1;doc['scenes'].insert(index,scene)
         try:doc=project.validate(doc)
         except ValueError as exc:self.status.set(str(exc));return
-        self.document=doc;self.mark_dirty();self.refresh(index);self.select_scene()
+        self.remember_edit();self.document=doc;self.mark_dirty();self.refresh(index);self.select_scene()
 
     def remove_scene(self):
         if len(self.document['scenes'])==1:self.status.set('Keep at least one scene.');return
-        index=self.selected();self.document['scenes'].pop(index)
+        index=self.selected();self.remember_edit();self.document['scenes'].pop(index)
         self.mark_dirty();self.refresh(index);self.select_scene()
 
     def move_scene(self,delta):
         index=self.selected();target=index+delta
         if 0<=target<len(self.document['scenes']):
+            self.remember_edit()
             scenes=self.document['scenes'];scenes[index],scenes[target]=scenes[target],scenes[index]
             self.mark_dirty();self.refresh(target);self.select_scene()
 
@@ -352,6 +387,7 @@ class StudioApp(tk.Tk):
 
     def new_project(self):
         if not self.confirm_discard():return
+        self.undo_stack.clear();self.redo_stack.clear()
         self.document=project.new_project();self.project_path=None;self.dirty=False;self.revision+=1
         self.time.set(0);self.snapshot=None;self.refresh();self.title('StoryStudio 2.0 · My cartoon');self.request_preview()
 
@@ -361,6 +397,7 @@ class StudioApp(tk.Tk):
         if path:
             try:
                 doc=project.load(path)
+                self.undo_stack.clear();self.redo_stack.clear()
                 self.document=doc;self.project_path=Path(path);self.dirty=False;self.revision+=1;self.time.set(0)
                 self.refresh();self.title('StoryStudio 2.0 · '+doc['name']);self.request_preview()
             except (ValueError,OSError) as exc:messagebox.showerror('Cannot open project',str(exc),parent=self)
@@ -381,10 +418,12 @@ class StudioApp(tk.Tk):
 
     def import_audio(self):
         path=filedialog.askopenfilename(parent=self,title='Import local narration or audio',filetypes=[('Audio','*.wav *.mp3 *.m4a *.flac *.ogg')])
-        if path:self.document['audio']=str(Path(path).resolve());self.mark_dirty();self.refresh(self.selected())
+        if path:
+            self.remember_edit();self.document['audio']=str(Path(path).resolve());self.mark_dirty();self.refresh(self.selected())
 
     def clear_audio(self):
-        self.document['audio']=None;self.mark_dirty();self.refresh(self.selected())
+        if self.document['audio'] is not None:
+            self.remember_edit();self.document['audio']=None;self.mark_dirty();self.refresh(self.selected())
 
     def export_video(self):
         if self.busy:return
