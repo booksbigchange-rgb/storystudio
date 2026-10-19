@@ -19,7 +19,7 @@ QUALITIES = {'Standard · 720p / 24 fps': (1, 24), 'Draft · 360p / 12 fps': (.5
 def new_scene():
     return dict(title='A little magic!', duration=10.0, character='fox',
                 expression='happy', action='story', background='meadow',
-                x=.4, size=1.0, speed=1.0)
+                x=.4, size=1.0, speed=1.0, motion=[])
 
 
 def new_project():
@@ -60,6 +60,19 @@ def validate(data):
         for field, low, high in [('duration', 1, 30), ('x', .2, .7),
                                  ('size', .6, 1.25), ('speed', .5, 2)]:
             scene[field] = number(scene.get(field), field, low, high)
+        motion = scene.setdefault('motion', [])
+        if not isinstance(motion, list) or len(motion) > 30:
+            raise ValueError('Use at most 30 motion keyframes per scene')
+        clean = []
+        for key in motion:
+            if not isinstance(key, dict):
+                raise ValueError('Each motion keyframe must be an object')
+            clean.append({'time': number(key.get('time'), 'keyframe time', 0, scene['duration']),
+                          'x': number(key.get('x'), 'keyframe position', .2, .7)})
+        clean.sort(key=lambda item: item['time'])
+        if len({item['time'] for item in clean}) != len(clean):
+            raise ValueError('Motion keyframe times must be unique')
+        scene['motion'] = clean
     if total_duration(doc) > 120:
         raise ValueError('A project can be at most 120 seconds')
     return doc
