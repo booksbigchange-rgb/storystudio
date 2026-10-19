@@ -8,7 +8,7 @@ This branch starts from `feature/unified-story-studio`. Do not merge into `main`
 - Mixed export: `engine/mixed_worker.py` and associated render/control modules.
 - Windows CI: `.github/workflows/story-studio-unified.yml`.
 
-## Release gates
+## Current release branch progress\n- Implemented cancellation checks between mixed export snapshots, titles, and rendering stages.\n- Added mocked regression tests for cancellation before the first snapshot, between snapshots, and before rendering.\n- These changes are not yet validated by Windows CI.\n\n## Release gates
 - [ ] Run the unified Windows workflow on this branch; verify unit and real GUI/render integration tests.
 - [ ] Confirm a real user can launch the workspace and locate Export without a command line.
 - [ ] Save, close, reopen and export an editable cartoon project and mixed project.
