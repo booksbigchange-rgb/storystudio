@@ -373,6 +373,9 @@ class StudioApp(tk.Tk):
             end=start+scene['duration'];x1=start/total*width;x2=end/total*width
             self.timeline.create_rectangle(x1+2,3,x2-2,43,fill=GREEN if i==self.selected() else '#abcbbb',outline='')
             if x2-x1>60:self.timeline.create_text((x1+x2)/2,23,text=f"{i+1:02d} · {scene['duration']:g}s",fill=WHITE if i==self.selected() else INK)
+            for key in scene.get('motion', []):
+                kx=(start+key['time'])/total*width
+                self.timeline.create_oval(kx-3,35,kx+3,41,fill='#f0b44f',outline='#ffffff')
             start=end
         x=self.time.get()/total*width;self.timeline.create_line(x,0,x,46,fill='#e8ab50',width=3)
 
