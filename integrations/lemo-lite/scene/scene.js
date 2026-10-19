@@ -24,6 +24,17 @@ function caption(text,W,H,portrait){
   ctx.fillStyle='#fff9e9';ctx.textAlign='center';ctx.textBaseline='top';
   lines.forEach((line,i)=>ctx.fillText(line,W/2,y+15+i*(font+6)));ctx.textBaseline='alphabetic';
 }
+function motionPosition(t,duration,baseX,keys){
+  if(!Array.isArray(keys)||keys.length===0)return baseX;
+  const sorted=[...keys].sort((a,b)=>a.time-b.time);
+  if(t<=sorted[0].time)return sorted[0].x;
+  if(t>=sorted[sorted.length-1].time)return sorted[sorted.length-1].x;
+  for(let i=0;i<sorted.length-1;i++){
+    const a=sorted[i],b=sorted[i+1];
+    if(t>=a.time&&t<=b.time){const span=b.time-a.time;if(span<=0)return b.x;return a.x+(b.x-a.x)*((t-a.time)/span)}
+  }
+  return baseX;
+}
 function picture(scene,t,W,H){
   const portrait=H>W;
   const colors={meadow:['#8cdeed','#e1f5d0','#75b896','#98cf78'],sunset:['#efb0b1','#ffe0aa','#bf91a3','#d5b18c'],night:['#293e68','#647fa2','#526b80','#749a91']}[scene.background];
@@ -33,7 +44,8 @@ function picture(scene,t,W,H){
   ellipse(W*.24,H*.85,W*.75,H*.37,colors[2]);ellipse(W*.9,H*.94,W*.8,H*.43,colors[3]);
   for(let i=0;i<22;i++){const x=hash(i+1)*W,y=H*(.7+hash(i+30)*.3);ellipse(x,y,4,7,'#fff0b7')}
   const phase=t/scene.duration*10;
-  const baseX=portrait?W*(.29+scene.x*.45):W*scene.x;
+  const keyedX=motionPosition(t,scene.duration,scene.x,scene.motion||[]);
+  const baseX=portrait?W*(.29+keyedX*.45):W*keyedX;
   const arrival=scene.action==='story'?ss(seg(phase,.3,2.1)):1;
   const x=lerp(-150,baseX,arrival);
   const walk=scene.action==='walk'?Math.sin(t*.7*scene.speed)*(portrait?45:110):0;
