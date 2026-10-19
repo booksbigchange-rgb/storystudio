@@ -71,5 +71,36 @@ class MixedStageCancellationTests(unittest.TestCase):
             self.assertFalse((root / 'video.mp4').exists())
 
 
+    def test_cancel_before_render_after_snapshots(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            doc = {'kind': 'storystudio-mixed', 'version': 1, 'format': 'widescreen',
+                   'sections': [{'engine': 'cartoon', 'project': str(root / 'source.json'),
+                                 'name': 'Scene'}]}
+
+            class CancelAtRender:
+                def __init__(self):
+                    self.calls = 0
+                    self.snapshots = 0
+                def check(self):
+                    self.calls += 1
+                    # initial, before snapshot, after snapshots, before
+                    # expected.json, then before the first render
+                    if self.calls == 5:
+                        raise RenderCancelled()
+                def run(self, command, log):
+                    self.snapshots += 1
+                    if self.snapshots != 1:
+                        raise AssertionError('Render must not start after cancellation')
+                    return '{"duration": 1}'
+
+            control = CancelAtRender()
+            with patch.object(mixed_render, 'project_kind', return_value='cartoon'):
+                with self.assertRaises(RenderCancelled):
+                    mixed_render.export(doc, root / 'video.mp4', control=control)
+            self.assertEqual(control.snapshots, 1)
+            self.assertFalse((root / 'video.mp4').exists())
+
+
 if __name__ == '__main__':
     unittest.main()
