@@ -411,7 +411,12 @@ class StudioApp(tk.Tk):
         except ValueError:
             return
         if abs(after-before)>0.0005:
-            self.apply_scene()
+            # When a scene is already animated, dragging the stage should edit
+            # the position at the playhead instead of changing an ignored base X.
+            if self.document['scenes'][self.selected()].get('motion'):
+                self.add_motion_keyframe()
+            else:
+                self.apply_scene()
 
     def draw_snapshot(self):
         self.stage.delete('all');self._stage_image_bounds=None
