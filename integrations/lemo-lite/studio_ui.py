@@ -55,6 +55,8 @@ class StudioApp(tk.Tk):
         self.closing = False
         self.revision = 0
         self._photo = None
+        self._stage_image_bounds = None
+        self._drag_x = None
         self.time = tk.DoubleVar(value=0)
         self.status = tk.StringVar(value='Ready. Choose a character, add a scene, and make it move.')
         self.audio_label = tk.StringVar(value='Original chimes · no narration selected')
@@ -196,7 +198,11 @@ class StudioApp(tk.Tk):
         self.stage=tk.Canvas(middle,bg='#dce8e1',highlightthickness=0)
         self.stage.pack(fill='both',expand=True)
         self.stage.bind('<Configure>',lambda _:self.draw_snapshot())
+        self.stage.bind('<ButtonPress-1>',self.stage_drag_start)
+        self.stage.bind('<B1-Motion>',self.stage_drag_motion)
+        self.stage.bind('<ButtonRelease-1>',self.stage_drag_end)
         self.snapshot=None
+        ttk.Label(middle,text='Drag horizontally on the stage to position the character',foreground=MUTED).pack(anchor='w')
         ttk.Label(middle,text='Frame preview · use Play live preview to watch motion',foreground=MUTED).pack(anchor='w',pady=8)
 
     def selected(self):
@@ -316,11 +322,42 @@ class StudioApp(tk.Tk):
             start+=scene['duration']
         self.refresh(index);self.time.set(moment);self.scrub()
 
+    def stage_drag_start(self,event):
+        bounds=self._stage_image_bounds
+        if not bounds or self.busy:
+            return
+        left,right=bounds
+        if left <= event.x <= right:
+            self._drag_x=self.document['scenes'][self.selected()]['x']
+            self.stage_drag_motion(event)
+
+    def stage_drag_motion(self,event):
+        if self._drag_x is None or not self._stage_image_bounds:
+            return
+        left,right=self._stage_image_bounds
+        position=max(.2,min(.7,(event.x-left)/max(1,right-left)))
+        self.fields['x'].set(f'{position:.3f}')
+        self.status.set(f'Character position: {position:.2f}. Release to apply.')
+
+    def stage_drag_end(self,event):
+        if self._drag_x is None:
+            return
+        before=self._drag_x
+        self._drag_x=None
+        try:
+            after=float(self.fields['x'].get())
+        except ValueError:
+            return
+        if abs(after-before)>0.0005:
+            self.apply_scene()
+
     def draw_snapshot(self):
-        self.stage.delete('all');w=max(1,self.stage.winfo_width());h=max(1,self.stage.winfo_height())
+        self.stage.delete('all');self._stage_image_bounds=None
+        w=max(1,self.stage.winfo_width());h=max(1,self.stage.winfo_height())
         if self.snapshot:
             image=Image.open(io.BytesIO(self.snapshot));image.thumbnail((max(1,w-20),max(1,h-20)))
             self._photo=ImageTk.PhotoImage(image)
+            self._stage_image_bounds=((w-image.width)/2,(w+image.width)/2)
             self.stage.create_image(w/2,h/2,image=self._photo)
         else:
             self.stage.create_text(w/2,h/2,text='Your story starts here.\n\nChoose Refresh frame to see your cartoon.',fill=GREEN,font=('Segoe UI',13),justify='center',width=max(100,w-30))
