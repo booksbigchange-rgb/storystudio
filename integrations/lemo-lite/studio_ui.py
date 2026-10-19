@@ -266,6 +266,9 @@ class StudioApp(tk.Tk):
     def apply_scene(self):
         index=self.selected();doc=copy.deepcopy(self.document)
         scene={key:var.get() for key,var in self.fields.items()}
+        # Motion is document data, not an editable text field. Preserve it when
+        # applying ordinary scene/character edits so keyframes survive changes.
+        scene['motion']=copy.deepcopy(doc['scenes'][index].get('motion', []))
         try:
             for key in ('duration','x','size','speed'):scene[key]=float(scene[key])
             doc['scenes'][index]=scene
