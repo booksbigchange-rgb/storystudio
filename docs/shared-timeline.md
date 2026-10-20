@@ -11,8 +11,9 @@ Open `Open-StoryStudio-Unified.cmd`, then **Shared timeline**.
 ## What is combined
 
 The mixed version-1 format has an explicit `storystudio-mixed` identifier,
-avoiding the legacy version-2 collision. One timeline holds up to 20 source
-projects, with a maximum export duration of 10 minutes. Each section retains
+avoiding the legacy version-2 collision. One timeline holds up to 200 sections
+and 60 minutes (see [long stories](long-story.md)); a shared audio mix is optional
+(see [audio mix](audio-mix.md)). Each section retains
 its source scene order and its renderer's audio behavior. The strip displays
 current source durations; export independently validates the source projects.
 
@@ -26,9 +27,9 @@ trimmed to its section; sections join with hard cuts.
 The output is fully decoded and its dimensions, duration, audio and frame count
 checked before atomic no-overwrite publication. This publication requires a file
 system supporting hard links (tested on the local D: NTFS drive).
-Per-run source snapshots, intermediate videos and diagnostic logs remain in
-`exports/mixed-run-*` for inspection. These consume disk space; automatic cache
-cleanup is not part of this milestone.
+Per-run source snapshots and diagnostic logs remain in `exports/mixed-run-*`;
+bulky intermediate videos are deleted when an export ends (set
+`STORYSTUDIO_KEEP_INTERMEDIATES=1` to keep them).
 
 ## Verification
 
@@ -49,8 +50,8 @@ cleanup is not part of this milestone.
 ## Still outside this milestone
 
 This is section-level sequencing, not a single scene/limb editor. No crossfades,
-shared soundtrack, undo, live mixed playback or
-mixed portable executable yet. The window blocks editing/closing during export;
+undo or live mixed playback yet. The shared soundtrack is in
+[audio mix](audio-mix.md) and the portable build in [unified portable](unified-portable.md). The window blocks editing/closing during export;
 **Cancel export** stops its process tree and restores editing; see
 [cancellation validation](mixed-export-cancellation.md).
 individual source editors retain their existing capabilities. Manual listening,
