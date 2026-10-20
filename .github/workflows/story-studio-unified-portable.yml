@@ -178,6 +178,12 @@ jobs:
           - Installed copy ran its own self-test: passed
           - Not tested here: your computer. See BUILD-REPORT.md inside the zip.
           "@ | Set-Content release/VALIDATION-SUMMARY.md -Encoding UTF8
+      - name: Print checksums and reports into the log
+        run: |
+          Get-Content release/*.sha256
+          Get-Content release/VALIDATION-SUMMARY.md
+          Get-Content release/BUILD-REPORT.md
+          Get-ChildItem release | ForEach-Object { "$($_.Name)  $($_.Length)  $((Get-FileHash $_.FullName -Algorithm SHA256).Hash)" }
       - name: Upload verification evidence (also on failure)
         if: always()
         uses: actions/upload-artifact@v4
