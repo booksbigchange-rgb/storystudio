@@ -12,7 +12,7 @@ concurrency:
 jobs:
   windows-regression:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     defaults:
       run:
         shell: pwsh
@@ -66,6 +66,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix export failed' }
           python tests/mixed_audio_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix GUI failed' }
+          python tests/mixed_endurance_integration.py --sections 40
+          if ($LASTEXITCODE -ne 0) { throw 'Long-story export endurance failed' }
+          python tests/mixed_long_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Long-story GUI management failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -78,5 +82,7 @@ jobs:
             exports/layer-keys-acceptance-*/
             exports/audio-acceptance-*/
             exports/audio-gui-*/
+            exports/endurance-*/results.json
+            exports/long-gui-*/
             exports/mixed-run-*/render.log
           retention-days: 14

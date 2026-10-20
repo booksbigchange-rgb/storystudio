@@ -23,7 +23,8 @@ def main():
             renderer.verify(Path(args.output), expected['duration'], expected['width'], expected['height'], 24)
             return
         doc = project.load(args.source)
-        duration = round(project.total_duration(doc)*24)/24
+        frames = round(project.total_duration(doc)*24)
+        duration = frames/24
         if args.action == 'render':
             width, height = project.FORMATS[doc['format']]
             renderer.export(argparse.Namespace(document=doc, width=width, height=height, fps=24,
@@ -31,7 +32,8 @@ def main():
     else:
         import project
         doc = project.read_project(args.source)
-        duration = sum(round(s['duration']*24) for s in doc['scenes'])/24
+        frames = sum(round(s['duration']*24) for s in doc['scenes'])
+        duration = frames/24
         if args.action == 'render':
             from desktop_app import render_scenes
             render_scenes(doc['scenes'], args.output, audio=doc['audio'], music=doc['music'], output_format=doc['format'])
@@ -39,7 +41,7 @@ def main():
         if duration <= 0:
             raise ValueError('A section must contain scenes')
         Path(args.output).write_text(json.dumps(doc, allow_nan=False), encoding='utf-8')
-        print(json.dumps({'duration': duration}))
+        print(json.dumps({'duration': duration, 'frames': frames}))
 
 
 if __name__ == '__main__':

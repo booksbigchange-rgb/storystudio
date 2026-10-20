@@ -9,6 +9,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import mixed_project as model
+import mixed_durations as durations
 from mixed_control import MixedControl, RenderCancelled
 from studio_hub import ROOT, command, project_kind
 
@@ -23,7 +24,7 @@ class MixedEditor:
         self.control = None
         self.events = queue.Queue()
         root.title('StoryStudio · Shared timeline')
-        root.geometry('940x570')
+        root.geometry('1120x620')
         root.minsize(720, 420)
         frame = ttk.Frame(root, padding=20)
         frame.pack(fill='both', expand=True)
@@ -49,12 +50,20 @@ class MixedEditor:
         self.cancel_button = ttk.Button(toolbar, text='Cancel export', command=self.cancel_export, state='disabled')
         self.cancel_button.pack(side='right', padx=3)
         for label, action in [('Add project', self.add), ('Edit source', self.edit), ('Move up', lambda:self.move(-1)),
-                              ('Move down', lambda:self.move(1)), ('Remove', self.remove)]:
+                              ('Move down', lambda:self.move(1)), ('To top', lambda:self.move_to(0)),
+                              ('To bottom', lambda:self.move_to(10**6)), ('Duplicate', self.duplicate), ('Remove', self.remove)]:
             b = ttk.Button(toolbar, text=label, command=action)
             b.pack(side='left', padx=3)
             self.buttons.append(b)
-        self.items = tk.Listbox(frame, font=('Segoe UI',12), selectmode='browse')
-        self.items.pack(fill='both', expand=True)
+        self.summary = tk.StringVar()
+        ttk.Label(frame, textvariable=self.summary).pack(anchor='w')
+        lister = ttk.Frame(frame)
+        lister.pack(fill='both', expand=True)
+        scroll = ttk.Scrollbar(lister, orient='vertical')
+        scroll.pack(side='right', fill='y')
+        self.items = tk.Listbox(lister, font=('Segoe UI',12), selectmode='browse', exportselection=False, yscrollcommand=scroll.set)
+        self.items.pack(side='left', fill='both', expand=True)
+        scroll.configure(command=self.items.yview)
         self.timeline = tk.Canvas(frame, height=68, background='#11161c', highlightthickness=0)
         self.timeline.pack(fill='x', pady=8)
         self.timeline.bind('<Configure>', lambda _:self.draw_timeline())
@@ -78,44 +87,36 @@ class MixedEditor:
 
     def refresh(self, index=0):
         self.items.delete(0, 'end')
-        for i, section in enumerate(self.doc['sections']):
-            self.items.insert('end', f'{i+1:02d}  ·  {section["engine"]}  ·  {section["name"]}')
+        rows, total = durations.timeline(self.doc)
+        for i, (section, (start, count)) in enumerate(zip(self.doc['sections'], rows)):
+            length = durations.clock(count) if count else 'missing'
+            self.items.insert('end', f'{i+1:03d}  ·  {section["engine"]}  ·  {section["name"]}  ·  {length}  ·  starts {durations.clock(start)}')
         if self.doc['sections']:
             self.items.selection_set(min(index, len(self.doc['sections'])-1))
+            self.items.see(min(index, len(self.doc['sections'])-1))
+        broken = sum(1 for _, count in rows if not count)
+        self.summary.set(f'{len(self.doc["sections"])} of {model.MAX_SECTIONS} sections · total {durations.clock(total)}'
+                         + (f' · {broken} source(s) missing or invalid' if broken else ''))
         self.draw_timeline()
 
     def draw_timeline(self):
         self.timeline.delete('all')
         self.hitboxes = []
-        durations = []
-        for section in self.doc['sections']:
-            try:
-                path = Path(section['project'])
-                if path.stat().st_size > 1024*1024:
-                    raise ValueError('Source too large')
-                source = json.loads(path.read_text(encoding='utf-8'))
-                seconds = sum(float(s['duration']) for s in source['scenes'])
-                if not math.isfinite(seconds) or seconds <= 0:
-                    raise ValueError('Invalid duration')
-                durations.append(seconds)
-            except (OSError, ValueError, KeyError, TypeError):
-                durations.append(None)
-        total = sum(s or 1 for s in durations)
-        if not total:
+        rows, total = durations.timeline(self.doc)
+        if not rows:
             return
+        weight = sum((count or 24) for _, count in rows)
         width = max(100,self.timeline.winfo_width())-16
         left = 8
-        elapsed = 0
-        for i, seconds in enumerate(durations):
-            right = left+width*(seconds or 1)/total
+        for i, (start, count) in enumerate(rows):
+            right = left+width*(count or 24)/weight
             color = '#BA9155' if self.doc['sections'][i]['engine']=='documentary' else '#426a83'
-            self.timeline.create_rectangle(left,8,right-2,44,fill=color,outline='')
+            self.timeline.create_rectangle(left,8,max(left+1,right-(2 if right-left > 4 else 0)),44,fill=color if count else '#7a3030',outline='')
             if right-left > 45:
-                self.timeline.create_text((left+right)/2,25,text=f'{i+1} · {seconds:g}s' if seconds else f'{i+1} · missing',fill='white')
-            self.timeline.create_text(left,55,text=f'{elapsed:g}s',anchor='w',fill='#D8D0BE')
+                self.timeline.create_text((left+right)/2,25,text=f'{i+1} · {count/24:g}s' if count else f'{i+1} · missing',fill='white')
+                self.timeline.create_text(left,55,text=durations.clock(start),anchor='w',fill='#D8D0BE')
             self.hitboxes.append((left,right,i))
             left = right
-            elapsed += seconds or 0
 
     def select_section(self,event):
         for left,right,index in self.hitboxes:
@@ -148,6 +149,24 @@ class MixedEditor:
             target = model.move(self.doc, index, delta)
             self.dirty |= target != index
             self.refresh(target)
+
+    def move_to(self, target):
+        index = self.selected()
+        if index is not None:
+            new = model.move_to(self.doc, index, target)
+            self.dirty |= new != index
+            self.refresh(new)
+
+    def duplicate(self):
+        index = self.selected()
+        if index is not None:
+            try:
+                new = model.duplicate(self.doc, index)
+            except ValueError as exc:
+                messagebox.showerror('Cannot duplicate', str(exc), parent=self.root)
+                return
+            self.dirty = True
+            self.refresh(new)
 
     def remove(self):
         index = self.selected()

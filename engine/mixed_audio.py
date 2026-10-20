@@ -47,8 +47,8 @@ def _clip(item, label):
     if not isinstance(item, dict):
         raise ValueError(f'{label} is not a valid clip')
     start = item.get('start', 0)
-    if type(start) not in (int, float) or not math.isfinite(start) or not 0 <= start <= 600:
-        raise ValueError(f'{label} start must be 0–600 seconds')
+    if type(start) not in (int, float) or not math.isfinite(start) or not 0 <= start <= 3600:
+        raise ValueError(f'{label} start must be 0–3600 seconds')
     return dict(file=_file(item.get('file'), label), start=float(start), volume=_volume(item.get('volume'), label, 1.0))
 
 

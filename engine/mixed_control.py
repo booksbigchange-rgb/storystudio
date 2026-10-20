@@ -50,6 +50,17 @@ class ProcessJob:
             self.close()
             raise
 
+    def peak(self):
+        """Peak committed bytes of every process this step started (0 if unavailable)."""
+        try:
+            limits = EXTENDED_LIMIT()
+            self.api.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p]
+            if self.api.QueryInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits), None):
+                return int(limits.PeakJobMemoryUsed)
+        except (OSError, AttributeError):
+            pass
+        return 0
+
     def close(self):
         if self.handle:
             self.api.CloseHandle(self.handle)
@@ -57,6 +68,8 @@ class ProcessJob:
 
 
 class MixedControl(RenderControl):
+    peak_bytes = 0  # largest memory use of any single export step, for endurance reporting
+
     def run(self, command, log):
         self.check()
         if os.name != 'nt':
@@ -86,6 +99,7 @@ class MixedControl(RenderControl):
                         with Path(log).open('a', encoding='utf-8') as handle:
                             handle.write(stdout+stderr+'\nCanceled export process tree.\n')
                         self.check()
+            self.peak_bytes = max(self.peak_bytes, job.peak())
             with Path(log).open('a', encoding='utf-8') as handle:
                 handle.write(stdout+stderr+'\n')
             self.check()
@@ -116,6 +130,8 @@ class MixedControl(RenderControl):
                         with Path(log).open('a', encoding='utf-8') as handle:
                             handle.write(stdout+stderr+'\nCanceled export process tree.\n')
                         self.check()
+            import resource
+            self.peak_bytes = max(self.peak_bytes, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024)
             with Path(log).open('a', encoding='utf-8') as handle:
                 handle.write(stdout+stderr+'\n')
             self.check()

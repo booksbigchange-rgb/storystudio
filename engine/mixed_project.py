@@ -8,6 +8,8 @@ from mixed_titles import validate_titles
 from mixed_audio import validate_audio, map_files
 
 FORMATS = {'widescreen': (1280, 720), 'portrait': (720, 1280)}
+MAX_SECTIONS = 200
+MAX_SECONDS = 3600
 
 
 def new_project():
@@ -20,9 +22,9 @@ def validate(doc):
     if doc.get('format') not in FORMATS:
         raise ValueError('Unsupported timeline format')
     sections = doc.get('sections')
-    validate_titles(doc.get('titles', []))
-    if not isinstance(sections, list) or len(sections) > 20:
-        raise ValueError('Use at most 20 sections')
+    validate_titles(doc.get('titles', []), MAX_SECONDS)
+    if not isinstance(sections, list) or len(sections) > MAX_SECTIONS:
+        raise ValueError(f'Use at most {MAX_SECTIONS} sections')
     for section in sections:
         if not isinstance(section, dict) or section.get('engine') not in ('documentary', 'cartoon'):
             raise ValueError('Each section needs a supported editor')
@@ -80,3 +82,22 @@ def move(doc, index, delta):
         return index
     doc['sections'].insert(target, doc['sections'].pop(index))
     return target
+
+
+def move_to(doc, index, target):
+    """Move a section to an absolute position (clamped); returns its new index."""
+    if not 0 <= index < len(doc['sections']) or not doc['sections']:
+        return index
+    target = min(max(target, 0), len(doc['sections'])-1)
+    doc['sections'].insert(target, doc['sections'].pop(index))
+    return target
+
+
+def duplicate(doc, index):
+    """Insert a copy right after ``index``; returns the copy's index."""
+    if not 0 <= index < len(doc['sections']):
+        return index
+    if len(doc['sections']) >= MAX_SECTIONS:
+        raise ValueError(f'Use at most {MAX_SECTIONS} sections')
+    doc['sections'].insert(index+1, copy.deepcopy(doc['sections'][index]))
+    return index+1
