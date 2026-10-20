@@ -1,0 +1,204 @@
+name: StoryStudio unified portable build
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/unified-story-studio]
+    paths:
+      - 'packaging/**'
+      - 'launchers/*unified-portable*'
+      - '*Unified-Portable.cmd'
+      - '.github/workflows/story-studio-unified-portable.yml'
+permissions:
+  contents: read
+concurrency:
+  group: unified-portable-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/cache/pip
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/cache/pycache
+      STORYSTUDIO_TEMP: ${{ github.workspace }}/temp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned build tools from official PyPI and record provenance
+        run: |
+          New-Item -Force -ItemType Directory artifacts/evidence, release, temp, tools/ffmpeg | Out-Null
+          python -m pip install --index-url https://pypi.org/simple --report artifacts/build-dependencies.json Pillow==12.3.0 playwright==1.55.0 pyinstaller==6.16.0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+      - name: Verify official FFmpeg archive against the publisher checksum
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+          Invoke-WebRequest $url -OutFile temp/ffmpeg.zip
+          Invoke-WebRequest "$url.sha256" -OutFile temp/ffmpeg.sha256
+          $published=[regex]::Match((Get-Content temp/ffmpeg.sha256 -Raw),'[a-fA-F0-9]{64}').Value.ToUpper()
+          $actual=(Get-FileHash temp/ffmpeg.zip -Algorithm SHA256).Hash
+          if ($actual -ne $published) { throw 'FFmpeg checksum mismatch' }
+          Expand-Archive temp/ffmpeg.zip temp/ffmpeg-unpacked
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            $binary=Get-ChildItem temp/ffmpeg-unpacked -Recurse -Filter $name | Select-Object -First 1
+            if (-not $binary) { throw "Missing $name" }
+            Copy-Item $binary.FullName tools/ffmpeg/
+          }
+          $licenseRoot=(Get-ChildItem temp/ffmpeg-unpacked -Directory | Select-Object -First 1).FullName
+          "FFMPEG_LICENSE_ROOT=$licenseRoot" >> $env:GITHUB_ENV
+          @{url=$url;sha256=$actual;publisher_checksum_verified=$true;version=(& tools/ffmpeg/ffmpeg.exe -version | Select-Object -First 1)} | ConvertTo-Json | Set-Content artifacts/ffmpeg-provenance.json -Encoding UTF8
+      - name: Syntax and unit regressions
+        run: |
+          python -m compileall -q engine integrations/lemo-lite packaging
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax failed' }
+          node --check integrations/lemo-lite/scene/scene.js
+          if ($LASTEXITCODE -ne 0) { throw 'Scene syntax failed' }
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unified unit tests failed' }
+          python -m unittest discover -s integrations/lemo-lite/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Character unit tests failed' }
+      - name: Build the two program groups
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m PyInstaller --noconfirm --clean --distpath dist/engine --workpath build/engine packaging/unified-engine.spec
+          if ($LASTEXITCODE -ne 0) { throw 'Engine build failed' }
+          python -m PyInstaller --noconfirm --clean --distpath dist/character --workpath build/character packaging/unified-character.spec
+          if ($LASTEXITCODE -ne 0) { throw 'Character build failed' }
+          $short=(git rev-parse --short=7 HEAD).Trim()
+          $version="2.0.0-$short"
+          "BUILD_VERSION=$version" >> $env:GITHUB_ENV
+          "BUILD_COMMIT=$((git rev-parse HEAD).Trim())" >> $env:GITHUB_ENV
+          $pkg="dist/StoryStudio-Unified-$version"
+          New-Item -ItemType Directory $pkg | Out-Null
+          Copy-Item dist/engine/StoryStudio/* $pkg -Recurse
+          Copy-Item dist/character/character "$pkg/character" -Recurse
+          New-Item -Force -ItemType Directory "$pkg/bin","$pkg/licenses","$pkg/provenance","$pkg/docs","$pkg/launchers" | Out-Null
+          Copy-Item tools/ffmpeg/ffmpeg.exe,tools/ffmpeg/ffprobe.exe "$pkg/bin/"
+          Copy-Item packaging/PORTABLE-README.md "$pkg/README.md"
+          Copy-Item integrations/lemo-lite/LICENSE-LEMO.md "$pkg/licenses/"
+          Get-ChildItem "$env:FFMPEG_LICENSE_ROOT/*" -File -Include 'LICENSE*','COPYING*','README*' -ErrorAction SilentlyContinue | Copy-Item -Destination "$pkg/licenses/"
+          Copy-Item artifacts/ffmpeg-provenance.json,artifacts/build-dependencies.json "$pkg/provenance/"
+          Copy-Item docs/audio-mix.md,docs/long-story.md,docs/character-keys-presets.md,docs/shared-timeline.md,docs/timed-titles.md,docs/documentary-templates.md "$pkg/docs/"
+          Copy-Item launchers/install-unified-portable.ps1,launchers/open-unified-portable.ps1 "$pkg/launchers/"
+          Copy-Item Install-StoryStudio-Unified-Portable.cmd,Open-StoryStudio-Unified-Portable.cmd $pkg
+          "BUILD_PKG=$pkg" >> $env:GITHUB_ENV
+          foreach ($exe in @('StoryStudio.exe','StoryStudioWorker.exe','character/StoryStudioCharacter.exe','character/StoryStudioCharacterWorker.exe','bin/ffmpeg.exe','bin/ffprobe.exe')) {
+            if (-not (Test-Path "$pkg/$exe")) { throw "Missing $exe" }
+          }
+      - name: Test the compiled build (on a copy; the package folder stays pristine)
+        run: |
+          $ErrorActionPreference='Stop'
+          $test='pkg-test'
+          Copy-Item $env:BUILD_PKG $test -Recurse
+          $evidence=(Resolve-Path artifacts/evidence).Path
+          function Run-App([string]$Exe,[string[]]$AppArgs,[int]$Seconds=900) {
+            $p=Start-Process -FilePath $Exe -ArgumentList $AppArgs -WorkingDirectory (Split-Path $Exe) -WindowStyle Hidden -PassThru
+            if (-not $p.WaitForExit($Seconds*1000)) { $p.Kill(); throw "Timed out: $Exe" }
+            return $p.ExitCode
+          }
+          $app=(Resolve-Path "$test/StoryStudio.exe").Path
+          $code=Run-App $app @('--self-test','--output',"$evidence/compiled-unified")
+          if ($code -ne 0) { Get-Content "$evidence/compiled-unified/selftest.log" -ErrorAction SilentlyContinue; throw "Unified self-test failed: $code" }
+          $char=(Resolve-Path "$test/character/StoryStudioCharacter.exe").Path
+          $code=Run-App $char @('--gui-test','--output',"$evidence/compiled-character-gui")
+          if ($code -ne 0) { Get-Content "$test/logs/portable-self-test.log" -ErrorAction SilentlyContinue; throw "Character GUI test failed: $code" }
+          $ffprobe=(Resolve-Path "$test/bin/ffprobe.exe").Path
+          $ffmpeg=(Resolve-Path "$test/bin/ffmpeg.exe").Path
+          foreach ($format in @(@{name='landscape';width=640;height=360},@{name='portrait';width=360;height=640})) {
+            $out="$evidence/compiled-character-$($format.name).mp4"
+            $code=Run-App $char @('--self-test','--output',$out,'--duration','2','--fps','12','--width',"$($format.width)",'--height',"$($format.height)")
+            if ($code -ne 0 -or -not (Test-Path $out)) { Get-Content "$test/logs/portable-self-test.log" -ErrorAction SilentlyContinue; throw "Character $($format.name) export failed" }
+            & $ffmpeg -v error -xerror -i $out -f null -
+            if ($LASTEXITCODE -ne 0) { throw 'Compiled character MP4 decode failed' }
+            $info=& $ffprobe -v error -count_frames -show_entries stream=codec_name,width,height,nb_read_frames -of csv=p=0 $out
+            @{summary="$($format.name) 2 s export, decoded; streams: $($info -join ' | ')"} | ConvertTo-Json | Set-Content "$evidence/compiled-character-$($format.name).json" -Encoding UTF8
+          }
+      - name: Manifest, checksums, report and archive
+        run: |
+          $ErrorActionPreference='Stop'
+          python packaging/make_manifest.py $env:BUILD_PKG $env:BUILD_VERSION $env:BUILD_COMMIT artifacts/ffmpeg-provenance.json
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest failed' }
+          $manifest=Get-Content "$env:BUILD_PKG/MANIFEST.json" -Raw | ConvertFrom-Json
+          # Longest path the user could see: D:\StoryStudio\exports\unified-portable-<version>\<relative path>
+          $prefix=('D:\StoryStudio\exports\unified-portable-'+$env:BUILD_VERSION+'\').Length
+          if ($manifest.longest_relative_path + $prefix -gt 255) { throw "A packaged path is too long for Windows (relative $($manifest.longest_relative_path))" }
+          python packaging/make_report.py $env:BUILD_PKG artifacts/evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Report failed' }
+          python packaging/make_manifest.py --sums-only $env:BUILD_PKG
+          if ($LASTEXITCODE -ne 0) { throw 'Checksums failed' }
+          $zip="release/StoryStudio-Unified-$env:BUILD_VERSION-windows-portable.zip"
+          Compress-Archive -Path "$env:BUILD_PKG/*" -DestinationPath $zip -CompressionLevel Optimal
+          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash
+          "$hash *$([IO.Path]::GetFileName($zip))" | Set-Content "$zip.sha256" -Encoding ASCII
+          "BUILD_ZIP=$zip" >> $env:GITHUB_ENV
+          "BUILD_ZIP_SHA256=$hash" >> $env:GITHUB_ENV
+          Copy-Item "$env:BUILD_PKG/MANIFEST.json","$env:BUILD_PKG/SHA256SUMS.txt","$env:BUILD_PKG/BUILD-REPORT.md" release/
+      - name: Install into a fresh studio folder, protect existing builds and run the installed self-test
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $PWD 'install-root'
+          New-Item -ItemType Directory -Force "$root/exports/portable-766646f" | Out-Null
+          Set-Content "$root/exports/portable-766646f/StoryStudio.exe" 'EXISTING BUILD' -Encoding ASCII
+          $zip=(Resolve-Path $env:BUILD_ZIP).Path
+          $install='launchers/install-unified-portable.ps1'
+          # Windows PowerShell 5.1 runs the user's .cmd launchers, so test with it.
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Zip $zip -StudioRoot $root
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          $dest="$root/exports/unified-portable-$env:BUILD_VERSION"
+          foreach ($path in @('StoryStudio.exe','character/StoryStudioCharacter.exe','bin/ffmpeg.exe','MANIFEST.json','SHA256SUMS.txt','BUILD-REPORT.md','Open-StoryStudio-Unified-Portable.cmd')) {
+            if (-not (Test-Path "$dest/$path")) { throw "Installed folder lacks $path" }
+          }
+          if (-not (Test-Path "$dest.install-report.txt")) { throw 'Install report missing' }
+          $before=(Get-FileHash "$dest/StoryStudio.exe").Hash
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Zip $zip -StudioRoot $root
+          if ($LASTEXITCODE -eq 0) { throw 'A second install over the same version was accepted' }
+          if ((Get-FileHash "$dest/StoryStudio.exe").Hash -ne $before) { throw 'Existing install changed' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File $install -Zip $zip -Sha256 ('0'*64) -StudioRoot "$root"
+          if ($LASTEXITCODE -eq 0) { throw 'Wrong zip checksum was accepted' }
+          if ((Get-Content "$root/exports/portable-766646f/StoryStudio.exe" -Raw).Trim() -ne 'EXISTING BUILD') { throw 'Existing portable build was modified' }
+          if (Get-ChildItem "$root/exports" -Force -Filter '.ups-*') { throw 'Staging folder left behind' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File launchers/open-unified-portable.ps1 -SelfTest -StudioRoot $root
+          if ($LASTEXITCODE -ne 0) { throw 'Installed self-test failed' }
+          $results=Get-ChildItem "$root/exports" -Directory -Filter 'unified-portable-validation-*' | Select-Object -First 1
+          if (-not $results -or -not (Test-Path "$($results.FullName)/results.json")) { throw 'Installed self-test produced no results' }
+          Copy-Item $results.FullName artifacts/evidence/installed-self-test -Recurse
+          Copy-Item "$dest.install-report.txt" artifacts/evidence/
+          @"
+          # Unified portable $env:BUILD_VERSION — validation summary
+          - Commit: $env:BUILD_COMMIT (GitHub Actions run $env:GITHUB_RUN_ID)
+          - Archive: $([IO.Path]::GetFileName($env:BUILD_ZIP))
+          - Archive SHA-256: $env:BUILD_ZIP_SHA256
+          - Unit tests, compiled unified self-test, compiled character GUI test, 2 compiled character exports: passed
+          - Installer (Windows PowerShell 5.1): installed to a new versioned folder, verified every file, refused a second install and a wrong checksum, left the existing portable-766646f folder untouched
+          - Installed copy ran its own self-test: passed
+          - Not tested here: your computer. See BUILD-REPORT.md inside the zip.
+          "@ | Set-Content release/VALIDATION-SUMMARY.md -Encoding UTF8
+      - name: Print checksums and reports into the log
+        run: |
+          Get-Content release/*.sha256
+          Get-Content release/VALIDATION-SUMMARY.md
+          Get-Content release/BUILD-REPORT.md
+          Get-ChildItem release | ForEach-Object { "$($_.Name)  $($_.Length)  $((Get-FileHash $_.FullName -Algorithm SHA256).Hash)" }
+      - name: Upload verification evidence (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-portable-evidence
+          path: |
+            artifacts/
+            pkg-test/logs/
+            pkg-test/exports/
+          retention-days: 30
+      - name: Upload the tested portable build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: story-studio-unified-portable
+          path: release/
+          compression-level: 0
+          retention-days: 30
