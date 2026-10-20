@@ -16,6 +16,69 @@ FORMATS = {'Landscape 16:9': (1280, 720), 'Shorts / TikTok 9:16': (720, 1280)}
 QUALITIES = {'Standard · 720p / 24 fps': (1, 24), 'Draft · 360p / 12 fps': (.5, 12)}
 
 
+# Simple per-scene 2D animation keys. Numeric tracks ease between keys; expression and
+# action switch at the key. Scenes without keys render exactly as before.
+KEY_NUMBERS = {'x': (.2, .7), 'size': (.6, 1.25), 'lift': (-150, 150), 'tilt': (-.6, .6)}
+KEY_CHOICES = {'expression': EXPRESSIONS, 'action': ACTIONS}
+MAX_KEYS = 8
+
+
+def validate_keys(keys):
+    if not isinstance(keys, list) or len(keys) > MAX_KEYS:
+        raise ValueError(f'Use at most {MAX_KEYS} animation keys')
+    result, previous = [], -1
+    for key in keys:
+        if not isinstance(key, dict) or set(key) - {'at', *KEY_NUMBERS, *KEY_CHOICES}:
+            raise ValueError('Each animation key needs a time and known settings')
+        at = number(key.get('at'), 'key time', 0, 1)
+        if at <= previous:
+            raise ValueError('Animation keys must be in increasing time order')
+        previous = at
+        item = {'at': at}
+        for name, (low, high) in KEY_NUMBERS.items():
+            if name in key:
+                item[name] = number(key[name], name, low, high)
+        for name, options in KEY_CHOICES.items():
+            if name in key:
+                if key[name] not in options:
+                    raise ValueError(f'Unsupported {name}')
+                item[name] = key[name]
+        if len(item) == 1:
+            raise ValueError('Each animation key must change at least one setting')
+        result.append(item)
+    return result
+
+
+def smooth(value):
+    return value*value*(3-2*value)
+
+
+def key_values(scene, fraction):
+    """Character settings at ``fraction`` (0–1) of the scene; mirrors scene.js ``keyValues``."""
+    keys = scene.get('keys') or []
+    fraction = min(1.0, max(0.0, fraction))
+    result = {'x': scene['x'], 'size': scene['size'], 'lift': 0.0, 'tilt': 0.0,
+              'expression': scene['expression'], 'action': scene['action']}
+    for name in KEY_NUMBERS:
+        track = [(k['at'], k[name]) for k in keys if name in k]
+        if not track:
+            continue
+        if fraction <= track[0][0]:
+            result[name] = track[0][1]
+        elif fraction >= track[-1][0]:
+            result[name] = track[-1][1]
+        else:
+            for (a, va), (b, vb) in zip(track, track[1:]):
+                if a <= fraction <= b:
+                    result[name] = va+(vb-va)*smooth((fraction-a)/(b-a))
+                    break
+    for name in KEY_CHOICES:
+        for key in keys:
+            if name in key and key['at'] <= fraction:
+                result[name] = key[name]
+    return result
+
+
 def new_scene():
     return dict(title='A little magic!', duration=10.0, character='fox',
                 expression='happy', action='story', background='meadow',
@@ -60,6 +123,8 @@ def validate(data):
         for field, low, high in [('duration', 1, 30), ('x', .2, .7),
                                  ('size', .6, 1.25), ('speed', .5, 2)]:
             scene[field] = number(scene.get(field), field, low, high)
+        if 'keys' in scene:
+            scene['keys'] = validate_keys(scene['keys'])
     if total_duration(doc) > 120:
         raise ValueError('A project can be at most 120 seconds')
     return doc

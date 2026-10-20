@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 
+import presets
 import project
 import renderer
 
@@ -59,6 +60,11 @@ class StudioApp(tk.Tk):
         self.format_var = tk.StringVar(value=self.document['format'])
         self.quality_var = tk.StringVar(value=self.document['quality'])
         self.fields = {k: tk.StringVar(value=str(v)) for k,v in project.new_scene().items()}
+        self.key_fields = {k: tk.StringVar() for k in ('at', 'x', 'size', 'lift', 'tilt', 'expression', 'action')}
+        self.key_fields['at'].set('50')
+        self.preset_name = tk.StringVar()
+        self.preset_choice = tk.StringVar()
+        self.preset_path = self.workspace/'projects'/'character-presets.json'
         self._build()
         self.refresh(0)
         self.protocol('WM_DELETE_WINDOW', self.exit_app)
@@ -82,7 +88,7 @@ class StudioApp(tk.Tk):
         style.configure('TCombobox', fieldbackground=WHITE, padding=5)
         style.map('TCombobox', fieldbackground=[('readonly',WHITE)], foreground=[('readonly',INK)])
         style.configure('TNotebook', tabmargins=0)
-        style.configure('TNotebook.Tab', padding=(10,7))
+        style.configure('TNotebook.Tab', padding=(7,7))
         style.configure('Horizontal.TProgressbar', background=GREEN, troughcolor='#dce7df')
         header=ttk.Frame(self,padding=(20,14))
         header.pack(fill='x')
@@ -142,8 +148,10 @@ class StudioApp(tk.Tk):
         inspector=ttk.Frame(body,width=285);inspector.pack(side='right',fill='y',padx=(14,0));inspector.pack_propagate(False)
         ttk.Label(inspector,text='MAKE IT YOURS',font=('Segoe UI',10,'bold')).pack(anchor='w',pady=(6,10))
         self.tabs=ttk.Notebook(inspector);self.tabs.pack(fill='both',expand=True)
-        scene_tab=ttk.Frame(self.tabs,padding=10);motion_tab=ttk.Frame(self.tabs,padding=10);export_tab=ttk.Frame(self.tabs,padding=10)
-        self.tabs.add(scene_tab,text='Scene');self.tabs.add(motion_tab,text='Character');self.tabs.add(export_tab,text='Output')
+        scene_tab=ttk.Frame(self.tabs,padding=10);motion_tab=ttk.Frame(self.tabs,padding=10);anim_tab=ttk.Frame(self.tabs,padding=10);export_tab=ttk.Frame(self.tabs,padding=10)
+        self.tabs.add(scene_tab,text='Scene');self.tabs.add(motion_tab,text='Character');self.tabs.add(export_tab,text='Output');self.tabs.add(anim_tab,text='Animate')
+        preset_tab=ttk.Frame(self.tabs,padding=10);self.tabs.add(preset_tab,text='Presets')
+        self._build_animate(anim_tab);self._build_presets(preset_tab)
         def field(parent,label,key,options=None):
             ttk.Label(parent,text=label,foreground=MUTED).pack(anchor='w',pady=(8,3))
             if options:
@@ -192,6 +200,145 @@ class StudioApp(tk.Tk):
         self.snapshot=None
         ttk.Label(middle,text='Frame preview · use Play live preview to watch motion',foreground=MUTED).pack(anchor='w',pady=8)
 
+    def _build_animate(self,tab):
+        ttk.Label(tab,text='Animation keys · time in % of this scene. Leave a box blank to keep the scene value.',foreground=MUTED,wraplength=250).pack(anchor='w')
+        self.key_list=tk.Listbox(tab,height=4,exportselection=False,relief='flat',borderwidth=0,bg=WHITE,fg=INK,
+                                 selectbackground=GREEN,selectforeground=WHITE,activestyle='none')
+        self.key_list.pack(fill='x',pady=6)
+        self.key_list.bind('<<ListboxSelect>>',self.select_key)
+        grid=ttk.Frame(tab);grid.pack(fill='x')
+        labels=[('at','Time %'),('x','Position'),('size','Size'),('lift','Lift'),('tilt','Tilt')]
+        for col,(key,label) in enumerate(labels):
+            ttk.Label(grid,text=label,foreground=MUTED).grid(row=0,column=col,sticky='w')
+            ttk.Entry(grid,textvariable=self.key_fields[key],width=4).grid(row=1,column=col,padx=(0,4),pady=2)
+        ttk.Combobox(tab,textvariable=self.key_fields['expression'],values=['']+list(project.EXPRESSIONS),state='readonly').pack(fill='x',pady=(6,2))
+        ttk.Combobox(tab,textvariable=self.key_fields['action'],values=['']+list(project.ACTIONS),state='readonly').pack(fill='x',pady=2)
+        ttk.Label(tab,text='Lift ±150 · Tilt ±0.6 radians · expression and motion switch at the key',foreground=MUTED,wraplength=250).pack(anchor='w')
+        row=ttk.Frame(tab);row.pack(fill='x',pady=6)
+        self.key_buttons={}
+        for label,action in [('Add key',self.add_key),('Update',self.update_key),('Remove',self.remove_key)]:
+            self.key_buttons[label]=ttk.Button(row,text=label,style='Small.TButton',width=1,command=action)
+            self.key_buttons[label].pack(side='left',fill='x',expand=True,padx=1)
+
+    def _build_presets(self,tab):
+        ttk.Label(tab,text='A preset remembers a character, look, motion and animation keys so you can reuse it in any scene or project. Caption, length and backdrop are never changed.',foreground=MUTED,wraplength=250).pack(anchor='w')
+        ttk.Label(tab,text='Preset name',foreground=MUTED).pack(anchor='w',pady=(10,2))
+        ttk.Entry(tab,textvariable=self.preset_name).pack(fill='x',pady=2)
+        self.preset_buttons={}
+        self.preset_buttons['Save preset']=ttk.Button(tab,text='Save this character as preset',command=self.save_preset)
+        self.preset_buttons['Save preset'].pack(fill='x',pady=2)
+        ttk.Label(tab,text='Saved presets',foreground=MUTED).pack(anchor='w',pady=(12,2))
+        self.preset_combo=ttk.Combobox(tab,textvariable=self.preset_choice,state='readonly')
+        self.preset_combo.pack(fill='x',pady=2)
+        row=ttk.Frame(tab);row.pack(fill='x')
+        for label,action in [('Apply preset',self.apply_preset),('Delete preset',self.delete_preset)]:
+            self.preset_buttons[label]=ttk.Button(row,text=label,style='Small.TButton',width=1,command=action)
+            self.preset_buttons[label].pack(side='left',fill='x',expand=True,padx=1)
+        self.refresh_presets()
+
+    def scene_keys(self):
+        return copy.deepcopy(self.document['scenes'][self.selected()].get('keys',[]))
+
+    def refresh_keys(self):
+        self.key_list.delete(0,'end')
+        for key in self.scene_keys():
+            parts=[f"{name} {key[name]:g}" for name in ('x','size','lift','tilt') if name in key]
+            parts+=[str(key[name]) for name in ('expression','action') if name in key]
+            self.key_list.insert('end',f"{key['at']*100:g}% · "+', '.join(parts))
+
+    def key_from_fields(self):
+        key={'at':float(self.key_fields['at'].get())/100}
+        for name in ('x','size','lift','tilt'):
+            if self.key_fields[name].get().strip():key[name]=float(self.key_fields[name].get())
+        for name in ('expression','action'):
+            if self.key_fields[name].get():key[name]=self.key_fields[name].get()
+        return key
+
+    def commit_keys(self,keys,select=None):
+        index=self.selected();doc=copy.deepcopy(self.document)
+        scene=doc['scenes'][index]
+        if keys:scene['keys']=keys
+        else:scene.pop('keys',None)
+        try:doc=project.validate(doc)
+        except ValueError as exc:
+            self.status.set(str(exc));return False
+        self.document=doc;self.mark_dirty();self.refresh(index);self.request_preview()
+        if select is not None and select<self.key_list.size():
+            self.key_list.selection_set(select)
+        return True
+
+    def change_key(self,replace=False):
+        try:
+            key=self.key_from_fields();keys=self.scene_keys()
+            chosen=self.key_list.curselection()
+            if replace:
+                if not chosen:raise ValueError('Select a key to update')
+                keys[chosen[0]]=key
+            else:keys.append(key)
+            keys.sort(key=lambda item:item['at'])
+        except (ValueError,TypeError) as exc:
+            self.status.set(str(exc));return False
+        return self.commit_keys(keys,keys.index(key))
+
+    def add_key(self):return self.change_key()
+
+    def update_key(self):return self.change_key(replace=True)
+
+    def remove_key(self):
+        chosen=self.key_list.curselection()
+        if chosen:
+            keys=self.scene_keys();del keys[chosen[0]];self.commit_keys(keys)
+
+    def select_key(self,_=None):
+        chosen=self.key_list.curselection()
+        if not chosen:return
+        key=self.scene_keys()[chosen[0]]
+        self.key_fields['at'].set(f"{key['at']*100:g}")
+        for name in ('x','size','lift','tilt'):self.key_fields[name].set(f"{key[name]:g}" if name in key else '')
+        for name in ('expression','action'):self.key_fields[name].set(key.get(name,''))
+        index=self.selected();scenes=self.document['scenes']
+        self.time.set(sum(s['duration'] for s in scenes[:index])+key['at']*scenes[index]['duration'])
+        self.scrub()
+
+    def refresh_presets(self):
+        try:names=sorted(presets.load(self.preset_path))
+        except (OSError,ValueError) as exc:
+            names=[];self.status.set('Preset library could not be read: '+str(exc))
+        self.preset_combo.configure(values=names)
+        if self.preset_choice.get() not in names:self.preset_choice.set(names[0] if names else '')
+
+    def save_preset(self):
+        name=self.preset_name.get()
+        try:
+            scene=self.document['scenes'][self.selected()]
+            try:presets.save(self.preset_path,name,scene)
+            except FileExistsError:
+                if not messagebox.askyesno('Replace preset',f'Replace the existing preset “{name.strip()}”?'):return
+                presets.save(self.preset_path,name,scene,replace=True)
+        except (OSError,ValueError) as exc:
+            self.status.set(str(exc));return
+        self.preset_choice.set(name.strip());self.refresh_presets();self.status.set(f'Saved preset “{name.strip()}”.')
+
+    def apply_preset(self):
+        try:
+            preset=presets.load(self.preset_path)[self.preset_choice.get()]
+        except (OSError,ValueError,KeyError):
+            self.status.set('Choose a saved preset first.');return
+        index=self.selected();doc=copy.deepcopy(self.document)
+        doc['scenes'][index]=presets.apply(doc['scenes'][index],preset)
+        try:doc=project.validate(doc)
+        except ValueError as exc:
+            self.status.set(str(exc));return
+        self.document=doc;self.mark_dirty();self.refresh(index);self.request_preview()
+        self.status.set(f'Applied preset “{self.preset_choice.get()}” to scene {index+1}. Caption, length and backdrop were kept.')
+
+    def delete_preset(self):
+        name=self.preset_choice.get()
+        try:presets.delete(self.preset_path,name)
+        except (OSError,ValueError,KeyError):
+            self.status.set('Choose a saved preset first.');return
+        self.refresh_presets();self.status.set(f'Deleted preset “{name}”.')
+
     def selected(self):
         selected=self.scene_list.curselection()
         return selected[0] if selected else 0
@@ -212,17 +359,17 @@ class StudioApp(tk.Tk):
         self.scrubber.configure(to=project.total_duration(self.document))
         self.time.set(min(self.time.get(),project.total_duration(self.document)))
         self.preview_heading.configure(text='STAGE  /  '+self.document['format'])
-        self.draw_timeline();self.draw_snapshot()
+        self.refresh_keys();self.draw_timeline();self.draw_snapshot()
 
     def select_scene(self,_=None):
         index=self.selected()
         for key,var in self.fields.items():var.set(str(self.document['scenes'][index][key]))
         self.time.set(sum(s['duration'] for s in self.document['scenes'][:index]))
-        self.scrub();self.draw_timeline()
+        self.refresh_keys();self.scrub();self.draw_timeline()
 
     def apply_scene(self):
         index=self.selected();doc=copy.deepcopy(self.document)
-        scene={key:var.get() for key,var in self.fields.items()}
+        scene={**doc['scenes'][index],**{key:var.get() for key,var in self.fields.items()}}  # keeps animation keys
         try:
             for key in ('duration','x','size','speed'):scene[key]=float(scene[key])
             doc['scenes'][index]=scene

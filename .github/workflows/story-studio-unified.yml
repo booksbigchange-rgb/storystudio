@@ -2,7 +2,7 @@ name: StoryStudio unified Windows regressions
 on:
   push:
     branches: [feature/unified-story-studio]
-    paths: ['engine/**', 'tests/**', '.github/workflows/story-studio-unified.yml']
+    paths: ['engine/**', 'tests/**', 'integrations/lemo-lite/**', '.github/workflows/story-studio-unified.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -66,6 +66,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix export failed' }
           python tests/mixed_audio_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix GUI failed' }
+          python tests/cartoon_keys_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Character animation keys render failed' }
+          python tests/cartoon_keys_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Character animation keys GUI failed' }
           python tests/mixed_endurance_integration.py --sections 40
           if ($LASTEXITCODE -ne 0) { throw 'Long-story export endurance failed' }
           python tests/mixed_long_gui_integration.py
@@ -83,6 +87,8 @@ jobs:
             exports/audio-acceptance-*/
             exports/audio-gui-*/
             exports/endurance-*/results.json
+            exports/cartoon-keys-*/
+            exports/cartoon-keys-gui-*/
             exports/long-gui-*/
             exports/mixed-run-*/render.log
           retention-days: 14
