@@ -2,7 +2,11 @@
 import subprocess
 import sys
 
-if __name__ == '__main__':
+def main(argv):
     if sys.stdin.readline().strip() != 'START':
-        raise SystemExit(1)
-    raise SystemExit(subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL))
+        return 1
+    return subprocess.call(argv, stdin=subprocess.DEVNULL)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))

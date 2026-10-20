@@ -11,15 +11,26 @@ from studio_hub import project_kind
 from mixed_titles import validate_titles, card
 from mixed_control import MixedControl
 import mixed_audio
+import runtime
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = runtime.app_root(__file__)
 WORKER = Path(__file__).with_name('mixed_worker.py')
 
 
 def tool(name):
     """Bundled Windows FFmpeg tools first; PATH only as a development fallback."""
-    bundled = ROOT/'tools/ffmpeg'/(name+'.exe')
-    return str(bundled) if bundled.is_file() else (shutil.which(name) or str(bundled))
+    for folder in ('tools/ffmpeg', 'bin'):
+        bundled = ROOT/folder/(name+'.exe')
+        if bundled.is_file():
+            return str(bundled)
+    return shutil.which(name) or str(ROOT/'tools/ffmpeg'/(name+'.exe'))
+
+
+def worker(kind):
+    """Command prefix for one export worker process ('documentary' or 'cartoon')."""
+    if runtime.FROZEN:
+        return [str(runtime.helper(kind))]
+    return [sys.executable, str(WORKER)]
 
 
 MEDIA = ('*.mp4', '*.mov', '*.png')
@@ -70,7 +81,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
             if project_kind(section['project']) != section['engine']:
                 raise ValueError('Source project no longer matches its section editor')
             snapshot = work/f'source-{i}.json'
-            info = json.loads(run([sys.executable, str(WORKER), 'snapshot', section['engine'], section['project'], str(snapshot)], log))
+            info = json.loads(run([*worker(section['engine']), 'snapshot', section['engine'], section['project'], str(snapshot)], log))
             sections.append((section, snapshot, info['duration']))
             total_frames += info['frames']
         duration = total_frames/24
@@ -95,7 +106,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
         for i, (section, snapshot, seconds) in enumerate(sections):
             progress(f'Rendering section {i+1}/{len(sections)}: {section["name"]}')
             raw = work/f'raw-{i}.mp4'
-            run([sys.executable, str(WORKER), 'render', section['engine'], str(snapshot), str(raw)], log)
+            run([*worker(section['engine']), 'render', section['engine'], str(snapshot), str(raw)], log)
             details = json.loads(run([probe, '-v', 'error', '-show_streams', '-of', 'json', str(raw)], log))
             has_audio = any(s['codec_type'] == 'audio' for s in details['streams'])
             args = [ffmpeg, '-v', 'error', '-nostdin', '-n', '-i', str(raw)]
@@ -136,7 +147,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
                          '-crf', '20', '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'copy',
                          '-movflags', '+faststart', str(pending)]
                 run(args, log)
-            run([sys.executable, str(WORKER), 'verify', 'cartoon', str(work/'expected.json'), str(pending)], log)
+            run([*worker('cartoon'), 'verify', 'cartoon', str(work/'expected.json'), str(pending)], log)
             # Atomic no-overwrite publication on the output volume (Windows NTFS).
             control.publish(pending, output)
             (work/'result.json').write_text(json.dumps(dict(status='passed', output=str(output), duration=duration,

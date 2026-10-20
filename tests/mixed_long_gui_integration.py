@@ -43,7 +43,9 @@ assert elapsed < 30, f'Adding {model.MAX_SECTIONS} sections took {elapsed:.1f}s'
 total_frames = sum(round(lengths[i % 4]*24) for i in range(model.MAX_SECTIONS))
 assert durations.clock(total_frames) in app.summary.get() and f'{model.MAX_SECTIONS} of {model.MAX_SECTIONS}' in app.summary.get(), app.summary.get()
 assert len(app.hitboxes) == model.MAX_SECTIONS
-assert app.items.yview()[1] < 1, 'list must scroll'
+first, last = app.items.yview()
+assert last-first < .5, f'list must scroll (visible fraction {last-first:.2f})'  # the newest section is selected, so the view is at the end
+assert app.items.cget('yscrollcommand'), 'scrollbar is not connected'
 assert 'starts' in app.items.get(5) and app.items.get(5).startswith('006')
 
 # Past the limit: explained, nothing added.

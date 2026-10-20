@@ -22,7 +22,15 @@ import project
 
 BASE = Path(__file__).resolve().parent
 FROZEN = bool(getattr(sys, 'frozen', False))
-ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE.parents[1]
+def _frozen_root():
+    # The unified portable build keeps this program in a "character" subfolder of the shared top folder.
+    if os.getenv('STORYSTUDIO_HOME'):
+        return Path(os.environ['STORYSTUDIO_HOME']).resolve()
+    here = Path(sys.executable).resolve().parent
+    return here.parent if here.name == 'character' and (here.parent/'StoryStudio.exe').is_file() else here
+
+
+ROOT = _frozen_root() if FROZEN else BASE.parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 BROWSER_LOCK = threading.Lock()
 

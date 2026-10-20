@@ -5,7 +5,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+import runtime
+
+ROOT = runtime.app_root(__file__)
 
 
 def project_kind(path):
@@ -33,6 +35,14 @@ def project_kind(path):
 def command(kind, path=None):
     if kind not in ('documentary', 'cartoon', 'mixed'):
         raise ValueError('Unknown editor')
+    if runtime.FROZEN:
+        # Cartoon editing lives in its own executable; both editors define a module called project.
+        result = [str(runtime.helper('character' if kind == 'cartoon' else 'hub'))]
+        if kind != 'cartoon':
+            result += ['--editor', kind]
+        if path:
+            result += ['--open' if kind == 'cartoon' else '--project', str(Path(path).resolve())]
+        return result
     result = [sys.executable, str(Path(__file__).resolve()), '--editor', kind]
     if path:
         result += ['--project', str(Path(path).resolve())]

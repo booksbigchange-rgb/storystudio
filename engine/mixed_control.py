@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 from render_control import RenderControl, RenderCancelled
+import runtime
 
 
 class IO_COUNTERS(ctypes.Structure):
@@ -74,12 +75,14 @@ class MixedControl(RenderControl):
         self.check()
         if os.name != 'nt':
             return self.run_posix(command, log)
-        gate = Path(__file__).with_name('export_gate.py')
-        # A Windows venv executable is itself a launcher that may spawn its real
-        # interpreter before job assignment. Start the base interpreter directly
-        # for this stdlib-only gate; the requested worker still uses its venv.
-        interpreter = getattr(sys, '_base_executable', sys.executable)
-        process = subprocess.Popen([interpreter, str(gate), *map(str, command)],
+        if runtime.FROZEN:
+            gate = [str(runtime.helper('gate')), '--gate']
+        else:
+            # A Windows venv executable is itself a launcher that may spawn its real
+            # interpreter before job assignment. Start the base interpreter directly
+            # for this stdlib-only gate; the requested worker still uses its venv.
+            gate = [getattr(sys, '_base_executable', sys.executable), str(Path(__file__).with_name('export_gate.py'))]
+        process = subprocess.Popen([*gate, *map(str, command)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
         job = None
