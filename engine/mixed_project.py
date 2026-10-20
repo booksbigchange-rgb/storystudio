@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import uuid
 from mixed_titles import validate_titles
+from mixed_audio import validate_audio, map_files
 
 FORMATS = {'widescreen': (1280, 720), 'portrait': (720, 1280)}
 
@@ -29,7 +30,10 @@ def validate(doc):
             raise ValueError('Each section needs a source project')
         if not isinstance(section.get('name'), str) or not 1 <= len(section['name']) <= 100:
             raise ValueError('Section name must contain 1–100 characters')
-    return copy.deepcopy(doc)
+    result = copy.deepcopy(doc)
+    if doc.get('audio') is not None:
+        result['audio'] = validate_audio(doc['audio'])
+    return result
 
 
 def load(path):
@@ -39,6 +43,8 @@ def load(path):
     doc = validate(json.loads(path.read_text(encoding='utf-8')))
     for section in doc['sections']:
         section['project'] = str((path.parent/section['project']).resolve())
+    if doc.get('audio'):
+        doc['audio'] = map_files(doc['audio'], lambda name: str((path.parent/name).resolve()))
     return doc
 
 
@@ -53,6 +59,13 @@ def save(doc, path):
             section['project'] = os.path.relpath(Path(section['project']).resolve(), path.parent)
         except ValueError:
             pass
+    if doc.get('audio'):
+        def relative(name):
+            try:
+                return os.path.relpath(Path(name).resolve(), path.parent)
+            except ValueError:
+                return name
+        doc['audio'] = map_files(doc['audio'], relative)
     temporary = path.with_name('.'+path.name+'.'+uuid.uuid4().hex+'.tmp')
     try:
         temporary.write_text(json.dumps(doc, indent=2, allow_nan=False), encoding='utf-8')

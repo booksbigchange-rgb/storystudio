@@ -62,6 +62,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Documentary template GUI and exports failed' }
           python tests/layer_keys_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Layer keyframe GUI and decoded motion failed' }
+          python tests/mixed_audio_integration.py --cartoon
+          if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix export failed' }
+          python tests/mixed_audio_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix GUI failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -72,5 +76,7 @@ jobs:
             exports/mixed-cancel-*/
             exports/templates-acceptance-*/
             exports/layer-keys-acceptance-*/
+            exports/audio-acceptance-*/
+            exports/audio-gui-*/
             exports/mixed-run-*/render.log
           retention-days: 14

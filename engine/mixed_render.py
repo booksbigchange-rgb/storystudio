@@ -1,15 +1,23 @@
 """Render immutable source snapshots, normalize sections and publish verified MP4."""
 import json
 from pathlib import Path
+import shutil
 import sys
 import uuid
 from mixed_project import validate, FORMATS
 from studio_hub import project_kind
 from mixed_titles import validate_titles, card
 from mixed_control import MixedControl
+import mixed_audio
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = Path(__file__).with_name('mixed_worker.py')
+
+
+def tool(name):
+    """Bundled Windows FFmpeg tools first; PATH only as a development fallback."""
+    bundled = ROOT/'tools/ffmpeg'/(name+'.exe')
+    return str(bundled) if bundled.is_file() else (shutil.which(name) or str(bundled))
 
 
 def export(doc, output, progress=lambda _: None, control=None):
@@ -28,8 +36,8 @@ def export(doc, output, progress=lambda _: None, control=None):
     work = ROOT/'exports'/('mixed-run-'+uuid.uuid4().hex)
     work.mkdir(parents=True)
     log = work/'render.log'
-    ffmpeg = str(ROOT/'tools/ffmpeg/ffmpeg.exe')
-    probe = str(ROOT/'tools/ffmpeg/ffprobe.exe')
+    ffmpeg = tool('ffmpeg')
+    probe = tool('ffprobe')
     width, height = FORMATS[doc['format']]
     sections = []
     # Snapshot every source before any rendering so editing during an export
@@ -44,6 +52,10 @@ def export(doc, output, progress=lambda _: None, control=None):
     if duration > 600:
         raise ValueError('Mixed timelines currently support up to 10 minutes')
     titles = validate_titles(doc.get('titles', []), duration)
+    mix = doc.get('audio') if mixed_audio.active(doc.get('audio')) else None
+    if mix:
+        # Media problems must stop the export before any section is rendered.
+        mixed_audio.check_media(mix, duration, lambda command: run(command, log), ffmpeg, probe)
     cards = []
     for i, item in enumerate(titles):
         image, xy = card(item, width, height)
@@ -72,8 +84,13 @@ def export(doc, output, progress=lambda _: None, control=None):
     try:
         progress('Joining sections and checking the complete video…')
         joined = work/'joined.mp4' if titles else pending
-        run([ffmpeg, '-v', 'error', '-nostdin', '-n', '-f', 'concat', '-safe', '1', '-i', str(concat),
-             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', str(joined)], log)
+        join = [ffmpeg, '-v', 'error', '-nostdin', '-n', '-f', 'concat', '-safe', '1', '-i', str(concat)]
+        if mix:
+            progress('Mixing narration, music and sound effects…')
+            inputs, graph, label = mixed_audio.build(mix, duration)
+            join += inputs + ['-filter_complex', graph, '-map', '0:v:0', '-map', label]
+        join += ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', str(joined)]
+        run(join, log)
         if titles:
             progress('Adding timed titles and captions…')
             args = [ffmpeg, '-v', 'error', '-nostdin', '-n', '-i', str(joined)]

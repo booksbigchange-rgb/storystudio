@@ -1,5 +1,7 @@
 """Cancelable commands with a Windows job owning the complete export process tree."""
 import ctypes
+import os
+import signal
 from ctypes import wintypes
 from pathlib import Path
 import subprocess
@@ -57,6 +59,8 @@ class ProcessJob:
 class MixedControl(RenderControl):
     def run(self, command, log):
         self.check()
+        if os.name != 'nt':
+            return self.run_posix(command, log)
         gate = Path(__file__).with_name('export_gate.py')
         # A Windows venv executable is itself a launcher that may spawn its real
         # interpreter before job assignment. Start the base interpreter directly
@@ -94,3 +98,31 @@ class MixedControl(RenderControl):
             if process.poll() is None:
                 process.kill()
             process.communicate()
+
+    def run_posix(self, command, log):
+        """Development fallback: one process group per step, killed as a whole on cancel."""
+        process = subprocess.Popen(list(map(str, command)), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
+                                   start_new_session=True)
+        try:
+            while True:
+                try:
+                    stdout, stderr = process.communicate(timeout=.1)
+                    break
+                except subprocess.TimeoutExpired:
+                    if self.event.is_set():
+                        os.killpg(process.pid, signal.SIGKILL)
+                        stdout, stderr = process.communicate(timeout=5)
+                        with Path(log).open('a', encoding='utf-8') as handle:
+                            handle.write(stdout+stderr+'\nCanceled export process tree.\n')
+                        self.check()
+            with Path(log).open('a', encoding='utf-8') as handle:
+                handle.write(stdout+stderr+'\n')
+            self.check()
+            if process.returncode:
+                raise RuntimeError(f'Export step failed. See {log}\n'+(stderr or stdout)[-800:])
+            return stdout
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
