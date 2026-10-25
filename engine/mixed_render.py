@@ -11,6 +11,7 @@ from studio_hub import project_kind
 from mixed_titles import validate_titles, card
 from mixed_control import MixedControl
 import mixed_audio
+import mixed_edit
 import runtime
 
 ROOT = runtime.app_root(__file__)
@@ -34,6 +35,37 @@ def worker(kind):
 
 
 MEDIA = ('*.mp4', '*.mov', '*.png')
+# Every clip that is joined must share these settings so the concat can copy the video.
+ENCODE = ['-ac', '2', '-ar', '48000', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-threads', '2',
+          '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
+          '-c:a', 'pcm_s16le', '-video_track_timescale', '24000']
+
+
+def trim_command(ffmpeg, source, first, end, fade_in, fade_out, target):
+    """Frame-exact piece of a rendered section, with optional dip-to-black fades at its ends."""
+    count = end-first
+    video, sound = f'trim=start_frame={first}:end_frame={end},setpts=PTS-STARTPTS', f'atrim=start={first/24:.9f}:end={end/24:.9f},asetpts=PTS-STARTPTS'
+    if fade_in:
+        video += f',fade=t=in:st=0:d={fade_in/24:.9f}'
+        sound += f',afade=t=in:st=0:d={fade_in/24:.9f}'
+    if fade_out:
+        video += f',fade=t=out:st={(count-fade_out)/24:.9f}:d={fade_out/24:.9f}'
+        sound += f',afade=t=out:st={(count-fade_out)/24:.9f}:d={fade_out/24:.9f}'
+    return [ffmpeg, '-v', 'error', '-nostdin', '-n', '-i', str(source), '-vf', video+',fps=24,format=yuv420p', '-af', sound+',apad',
+            *ENCODE, '-t', f'{count/24:.9f}', str(target)]
+
+
+def dissolve_command(ffmpeg, previous, current, tail_first, tail_end, head_first, head_end, target):
+    """Cross-fade the last frames of ``previous`` into the first frames of ``current``."""
+    seconds = (tail_end-tail_first)/24
+    graph = (f'[0:v]trim=start_frame={tail_first}:end_frame={tail_end},setpts=PTS-STARTPTS[v0];'
+             f'[1:v]trim=start_frame={head_first}:end_frame={head_end},setpts=PTS-STARTPTS[v1];'
+             f'[v0][v1]xfade=transition=fade:duration={seconds:.9f}:offset=0,fps=24,format=yuv420p[v];'
+             f'[0:a]atrim=start={tail_first/24:.9f}:end={tail_end/24:.9f},asetpts=PTS-STARTPTS[a0];'
+             f'[1:a]atrim=start={head_first/24:.9f}:end={head_end/24:.9f},asetpts=PTS-STARTPTS[a1];'
+             f'[a0][a1]acrossfade=d={seconds:.9f}:c1=tri:c2=tri,apad[a]')
+    return [ffmpeg, '-v', 'error', '-nostdin', '-n', '-i', str(previous), '-i', str(current), '-filter_complex', graph,
+            '-map', '[v]', '-map', '[a]', *ENCODE, '-t', f'{seconds:.9f}', str(target)]
 
 
 def clean(work):
@@ -74,7 +106,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
         probe = tool('ffprobe')
         width, height = FORMATS[doc['format']]
         sections = []
-        total_frames = 0
+        source_frames = []
         # Snapshot every source before any rendering so editing during an export
         # cannot change scene settings halfway through this render.
         for i, section in enumerate(doc['sections']):
@@ -83,7 +115,9 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
             snapshot = work/f'source-{i}.json'
             info = json.loads(run([*worker(section['engine']), 'snapshot', section['engine'], section['project'], str(snapshot)], log))
             sections.append((section, snapshot, info['duration']))
-            total_frames += info['frames']
+            source_frames.append(info['frames'])
+        edits = mixed_edit.plan([s[0] for s in sections], source_frames)
+        total_frames = edits['total']
         duration = total_frames/24
         if duration > MAX_SECONDS:
             raise ValueError(f'Mixed timelines support up to {MAX_SECONDS//60} minutes')
@@ -114,13 +148,28 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
                 args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
             args += ['-map', '0:v:0', '-map', '0:a:0' if has_audio else '1:a:0',
                      '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:out_color_matrix=bt709:out_range=tv,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p',
-                     '-af', 'aresample=48000,apad', '-ac', '2', '-ar', '48000',
-                     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-threads', '2',
-                     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
-                     '-c:a', 'pcm_s16le', '-video_track_timescale', '24000', '-t', str(seconds), str(work/f'section-{i}.mov')]
+                     '-af', 'aresample=48000,apad', *ENCODE, '-t', str(seconds), str(work/f'section-{i}.mov')]
             run(args, log)
+        clips = []
+        for k, part in enumerate(edits['parts']):
+            control.check()
+            if part[0] == 'main':
+                _, i, first, end, fade_in, fade_out = part
+                if (first, end) == (0, source_frames[i]) and not (fade_in or fade_out):
+                    clips.append(f'section-{i}.mov')  # untouched sections are joined as they were rendered
+                    continue
+                progress(f'Applying trim and fades to section {i+1}…')
+                run(trim_command(ffmpeg, work/f'section-{i}.mov', first, end, fade_in, fade_out, work/f'clip-{k}.mov'), log)
+            else:
+                _, i, frames = part
+                progress(f'Cross-fading sections {i} and {i+1}…')
+                tail_end = edits['spans'][i-1][1]
+                head_first = edits['spans'][i][0]
+                run(dissolve_command(ffmpeg, work/f'section-{i-1}.mov', work/f'section-{i}.mov', tail_end-frames, tail_end,
+                                     head_first, head_first+frames, work/f'clip-{k}.mov'), log)
+            clips.append(f'clip-{k}.mov')
         concat = work/'sections.txt'
-        concat.write_text(''.join(f"file 'section-{i}.mov'\n" for i in range(len(sections))), encoding='utf-8')
+        concat.write_text(''.join(f"file '{name}'\n" for name in clips), encoding='utf-8')
         pending = output.with_name('.'+output.stem+'.'+uuid.uuid4().hex+'.partial.mp4')
         try:
             progress('Joining sections and checking the complete video…')

@@ -7,6 +7,7 @@ identical to the finished video, however many sections the story has.
 import json
 import math
 from pathlib import Path
+import mixed_edit
 
 FPS = 24
 _cache = {}
@@ -51,11 +52,25 @@ def timeline(doc):
 
     Unreadable sections contribute no frames, so the total is a lower bound until fixed.
     """
-    rows, cursor = [], 0
-    for section in doc['sections']:
+    sections = doc['sections']
+    lengths = []
+    for section in sections:
         count = section_frames(section)
-        rows.append((cursor, count))
-        cursor += count or 0
+        try:
+            count = mixed_edit.window(section, count)
+            count = count[1]-count[0]
+        except (ValueError, TypeError, KeyError):
+            count = None  # missing source, or the source shrank below the saved trim
+        lengths.append(count)
+    rows, cursor = [], 0
+    for i, section in enumerate(sections):
+        transition = section.get('transition')
+        overlap = 0
+        if i and transition and transition['kind'] == 'dissolve' and lengths[i] and lengths[i-1]:
+            overlap = min(transition['frames'], lengths[i], lengths[i-1])
+        cursor -= overlap
+        rows.append((cursor, lengths[i]))
+        cursor += lengths[i] or 0
     return rows, cursor
 
 

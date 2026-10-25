@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 from mixed_titles import validate_titles
 from mixed_audio import validate_audio, map_files
+from mixed_edit import validate_edit
 
 FORMATS = {'widescreen': (1280, 720), 'portrait': (720, 1280)}
 MAX_SECTIONS = 200
@@ -32,6 +33,7 @@ def validate(doc):
             raise ValueError('Each section needs a source project')
         if not isinstance(section.get('name'), str) or not 1 <= len(section['name']) <= 100:
             raise ValueError('Section name must contain 1–100 characters')
+        validate_edit(section)
     result = copy.deepcopy(doc)
     if doc.get('audio') is not None:
         result['audio'] = validate_audio(doc['audio'])

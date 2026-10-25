@@ -118,6 +118,7 @@ class TitlesEditor:
 
     def apply(self):
         if self.titles != self.parent.doc.get('titles', []):
+            self.parent.checkpoint()
             self.parent.doc['titles'] = copy.deepcopy(self.titles)
             self.parent.dirty = True
             self.parent.status.set(f'{len(self.titles)} timed text items applied. Save the timeline to keep them.')

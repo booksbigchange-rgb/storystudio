@@ -161,6 +161,7 @@ class AudioEditor:
             return
         stored = audio if model.active(audio) else None
         if stored != self.parent.doc.get('audio'):
+            self.parent.checkpoint()
             if stored is None:
                 self.parent.doc.pop('audio', None)
             else:

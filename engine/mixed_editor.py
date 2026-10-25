@@ -10,8 +10,20 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import mixed_project as model
 import mixed_durations as durations
+from mixed_history import History
 from mixed_control import MixedControl, RenderCancelled
 from studio_hub import ROOT, command, project_kind
+
+
+def marks(section):
+    """Short list markers for trims and transitions."""
+    text = ''
+    if 'trim_in' in section or 'trim_out' in section:
+        text += '  ✂'
+    transition = section.get('transition')
+    if transition:
+        text += f'  ⇄ {transition["kind"]} {transition["frames"]}f'
+    return text
 
 
 class MixedEditor:
@@ -20,6 +32,7 @@ class MixedEditor:
         self.doc = model.load(path) if path else model.new_project()
         self.path = Path(path) if path else None
         self.dirty = False
+        self.history = History()
         self.busy = False
         self.control = None
         self.events = queue.Queue()
@@ -51,7 +64,8 @@ class MixedEditor:
         self.cancel_button.pack(side='right', padx=3)
         for label, action in [('Add project', self.add), ('Edit source', self.edit), ('Move up', lambda:self.move(-1)),
                               ('Move down', lambda:self.move(1)), ('To top', lambda:self.move_to(0)),
-                              ('To bottom', lambda:self.move_to(10**6)), ('Duplicate', self.duplicate), ('Remove', self.remove)]:
+                              ('To bottom', lambda:self.move_to(10**6)), ('Duplicate', self.duplicate), ('Remove', self.remove),
+                              ('Trim · split · transition', self.edit_section), ('Undo', self.undo), ('Redo', self.redo)]:
             b = ttk.Button(toolbar, text=label, command=action)
             b.pack(side='left', padx=3)
             self.buttons.append(b)
@@ -71,11 +85,49 @@ class MixedEditor:
         self.hitboxes = []
         self.refresh()
         root.protocol('WM_DELETE_WINDOW', self.close)
+        root.bind('<Control-z>', lambda _: self.undo())
+        root.bind('<Control-y>', lambda _: self.redo())
         self.poll_id = root.after(100, self.poll)
 
     def selected(self):
         choice = self.items.curselection()
         return choice[0] if choice else None
+
+    def checkpoint(self):
+        """Remember the timeline before a change so Undo can restore it."""
+        self.history.checkpoint(self.doc)
+
+    def restore(self, doc, index):
+        self.doc = doc
+        self.dirty = True
+        self.format.set(doc['format'])
+        self.refresh(index)
+
+    def undo(self):
+        if self.busy:
+            return
+        doc = self.history.undo(self.doc)
+        if doc is None:
+            self.status.set('Nothing to undo.')
+        else:
+            self.restore(doc, self.selected() or 0)
+            self.status.set('Undid the last change.')
+
+    def redo(self):
+        if self.busy:
+            return
+        doc = self.history.redo(self.doc)
+        if doc is None:
+            self.status.set('Nothing to redo.')
+        else:
+            self.restore(doc, self.selected() or 0)
+            self.status.set('Redid the change.')
+
+    def edit_section(self):
+        index = self.selected()
+        if index is not None:
+            from mixed_section_editor import SectionEditor
+            return SectionEditor(self, index)
 
     def edit_titles(self):
         from mixed_titles_editor import TitlesEditor
@@ -90,7 +142,7 @@ class MixedEditor:
         rows, total = durations.timeline(self.doc)
         for i, (section, (start, count)) in enumerate(zip(self.doc['sections'], rows)):
             length = durations.clock(count) if count else 'missing'
-            self.items.insert('end', f'{i+1:03d}  ·  {section["engine"]}  ·  {section["name"]}  ·  {length}  ·  starts {durations.clock(start)}')
+            self.items.insert('end', f'{i+1:03d}  ·  {section["engine"]}  ·  {section["name"]}{marks(section)}  ·  {length}  ·  starts {durations.clock(start)}')
         if self.doc['sections']:
             self.items.selection_set(min(index, len(self.doc['sections'])-1))
             self.items.see(min(index, len(self.doc['sections'])-1))
@@ -131,7 +183,9 @@ class MixedEditor:
             raise ValueError('Add documentary or character projects, not a nested timeline')
         candidate = copy.deepcopy(self.doc)
         candidate['sections'].append(dict(engine=kind, project=str(Path(path).resolve()), name=Path(path).parent.name+' / '+Path(path).stem))
-        self.doc = model.validate(candidate)
+        checked = model.validate(candidate)
+        self.checkpoint()
+        self.doc = checked
         self.dirty = True
         self.refresh(len(self.doc['sections'])-1)
 
@@ -146,6 +200,7 @@ class MixedEditor:
     def move(self, delta):
         index = self.selected()
         if index is not None:
+            self.checkpoint()
             target = model.move(self.doc, index, delta)
             self.dirty |= target != index
             self.refresh(target)
@@ -153,6 +208,7 @@ class MixedEditor:
     def move_to(self, target):
         index = self.selected()
         if index is not None:
+            self.checkpoint()
             new = model.move_to(self.doc, index, target)
             self.dirty |= new != index
             self.refresh(new)
@@ -160,17 +216,20 @@ class MixedEditor:
     def duplicate(self):
         index = self.selected()
         if index is not None:
+            before = copy.deepcopy(self.doc)
             try:
                 new = model.duplicate(self.doc, index)
             except ValueError as exc:
                 messagebox.showerror('Cannot duplicate', str(exc), parent=self.root)
                 return
+            self.history.checkpoint(before)
             self.dirty = True
             self.refresh(new)
 
     def remove(self):
         index = self.selected()
         if index is not None:
+            self.checkpoint()
             del self.doc['sections'][index]
             self.dirty = True
             self.refresh(max(0,index-1))
@@ -182,6 +241,7 @@ class MixedEditor:
             subprocess.Popen(command(section['engine'], section['project']), cwd=ROOT)
 
     def change_format(self, _=None):
+        self.checkpoint()
         self.doc['format'] = self.format.get()
         self.dirty = True
 
@@ -208,6 +268,7 @@ class MixedEditor:
         if path:
             try:
                 doc = model.load(path)
+                self.history.clear()
                 self.doc, self.path, self.dirty = doc, Path(path), False
                 self.format.set(doc['format'])
                 self.refresh()

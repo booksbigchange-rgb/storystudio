@@ -70,6 +70,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys render failed' }
           python tests/cartoon_keys_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys GUI failed' }
+          python tests/mixed_edit_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trim, transition and split export failed' }
+          python tests/mixed_edit_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Undo, trim, transition and split GUI failed' }
           python tests/mixed_endurance_integration.py --sections 40
           if ($LASTEXITCODE -ne 0) { throw 'Long-story export endurance failed' }
           python tests/mixed_long_gui_integration.py
@@ -90,5 +94,7 @@ jobs:
             exports/cartoon-keys-*/
             exports/cartoon-keys-gui-*/
             exports/long-gui-*/
+            exports/edit-acceptance-*/results.json
+            exports/edit-gui-*/
             exports/mixed-run-*/render.log
           retention-days: 14
