@@ -14,10 +14,13 @@ import threading
 import traceback
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 
+import character_rig
+import native_scene
 import presets
+import sample_character
 import cartoon_project as project
 import renderer
 
@@ -65,6 +68,8 @@ class StudioApp(tk.Tk):
         self.preset_name = tk.StringVar()
         self.preset_choice = tk.StringVar()
         self.preset_path = self.workspace/'projects'/'character-presets.json'
+        self.library = self.workspace/'projects'/'characters'
+        os.environ.setdefault('STORYSTUDIO_CHARACTERS', str(self.library))
         self._build()
         self.refresh(0)
         self.protocol('WM_DELETE_WINDOW', self.exit_app)
@@ -168,7 +173,12 @@ class StudioApp(tk.Tk):
         self.apply_button=ttk.Button(scene_tab,text='Apply scene edits',style='Accent.TButton',command=self.apply_scene)
         self.apply_button.pack(fill='x',pady=14)
         ttk.Label(scene_tab,text='Add scenes to tell a longer story.\nSave a project to edit it again later.',foreground=MUTED,wraplength=240).pack(anchor='w')
-        self.character_combo=field(motion_tab,'Character','character',project.CHARACTERS)
+        self.character_combo=field(motion_tab,'Character','character',project.CHARACTERS+self.custom_names())
+        self.character_combo.configure(postcommand=self.refresh_characters)
+        self.pack_buttons={}
+        for label,action in [('Import layered character…',self.import_pack),('Create example layers…',self.create_example)]:
+            self.pack_buttons[label]=ttk.Button(motion_tab,text=label,style='Small.TButton',command=action)
+            self.pack_buttons[label].pack(fill='x',pady=(6,0))
         self.expression_combo=field(motion_tab,'Expression','expression',project.EXPRESSIONS)
         self.action_combo=field(motion_tab,'Motion','action',project.ACTIONS)
         params=ttk.Frame(motion_tab);params.pack(fill='x',pady=(10,0))
@@ -199,6 +209,34 @@ class StudioApp(tk.Tk):
         self.stage.bind('<Configure>',lambda _:self.draw_snapshot())
         self.snapshot=None
         ttk.Label(middle,text='Frame preview · use Play live preview to watch motion',foreground=MUTED).pack(anchor='w',pady=8)
+
+    def custom_names(self):
+        try:return ['custom:'+n for n in character_rig.list_packs(character_rig.library_dir())]
+        except OSError:return []
+
+    def refresh_characters(self):
+        self.character_combo.configure(values=project.CHARACTERS+self.custom_names())
+
+    def import_pack(self):
+        folder=filedialog.askdirectory(parent=self,title='Choose a folder of aligned layer PNGs (or a finished pack)')
+        if not folder:return
+        suggested=''.join(c if c.isalnum() or c in '_-' else '_' for c in Path(folder).name)[:32]
+        name=simpledialog.askstring('Character name','Name for this character (letters, digits, _ and -):',initialvalue=suggested,parent=self)
+        if not name:return
+        try:
+            character_rig.import_pack(folder,name,character_rig.library_dir())
+        except (OSError,ValueError) as exc:
+            self.status.set(str(exc));messagebox.showerror('Cannot import character',str(exc),parent=self);return
+        self.refresh_characters();self.fields['character'].set('custom:'+name)
+        self.status.set(f'Imported “{name}”. Press Apply character edits to use it; your original files were not changed.')
+
+    def create_example(self):
+        folder=filedialog.askdirectory(parent=self,title='Choose a NEW empty folder for the example layers')
+        if not folder:return
+        try:sample_character.write(folder)
+        except (OSError,ValueError) as exc:
+            self.status.set(str(exc));return
+        self.status.set(f'Wrote example layers to {folder}. Import that folder, or replace the PNGs with your own art first.')
 
     def _build_animate(self,tab):
         ttk.Label(tab,text='Animation keys · time in % of this scene. Leave a box blank to keep the scene value.',foreground=MUTED,wraplength=250).pack(anchor='w')

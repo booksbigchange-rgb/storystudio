@@ -12,6 +12,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 import cartoon_project as project
+import character_rig
 
 TAU = math.tau
 COLORS = {'meadow': ('#8cdeed', '#e1f5d0', '#75b896', '#98cf78'), 'sunset': ('#efb0b1', '#ffe0aa', '#bf91a3', '#d5b18c'),
@@ -87,6 +88,25 @@ class Painter:
     def factor(self):
         a, b, c, d, _, _ = self.matrix
         return math.sqrt(abs(a*d-b*c))
+
+    def sprite(self, image, frame):
+        """Draw a premultiplied RGBa sprite; ``frame`` maps sprite pixels to the current logical space."""
+        a, b, c, d, e, f = self.matrix
+        p, q, r, s, t, u = frame
+        m = (a*p+c*q, b*p+d*q, a*r+c*s, b*r+d*s, a*t+c*u+e, b*t+d*u+f)      # sprite pixel -> device
+        det = m[0]*m[3]-m[1]*m[2]
+        if abs(det) < 1e-9:
+            return
+        corners = [(m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]) for x, y in ((0, 0), (image.width, 0), (0, image.height), (image.width, image.height))]
+        x0, y0 = max(0, math.floor(min(c[0] for c in corners))), max(0, math.floor(min(c[1] for c in corners)))
+        x1, y1 = min(self.image.width, math.ceil(max(c[0] for c in corners))), min(self.image.height, math.ceil(max(c[1] for c in corners)))
+        if x1 <= x0 or y1 <= y0:
+            return
+        inv = (m[3]/det, -m[2]/det, (m[2]*m[5]-m[3]*m[4])/det, -m[1]/det, m[0]/det, (m[1]*m[4]-m[0]*m[5])/det)
+        # inverse affine for output pixel (x0+i, y0+j): input = inv * (x, y)
+        data = (inv[0], inv[1], inv[0]*x0+inv[1]*y0+inv[2], inv[3], inv[4], inv[3]*x0+inv[4]*y0+inv[5])
+        patch = image.transform((x1-x0, y1-y0), Image.AFFINE, (data[0], data[1], data[2], data[3], data[4], data[5]), resample=Image.BICUBIC).convert('RGBA')
+        self.image.paste(patch, (x0, y0), patch)
 
     def polygon(self, points, fill):
         if len(points) >= 3:
@@ -192,6 +212,83 @@ def _font(size):
     return ImageFont.load_default()
 
 
+_packs = {}
+
+
+def get_pack(name):
+    """Packs are decoded once per process and re-read if the folder changed."""
+    folder = character_rig.library_dir()/name
+    stamp = None
+    try:
+        stamp = ((folder/'rig.json').stat().st_mtime_ns, len(list(folder.glob('*.png'))))
+    except OSError:
+        pass
+    cached = _packs.get(name)
+    if cached and cached[0] == stamp and stamp is not None:
+        return cached[1]
+    pack = character_rig.load_pack(name)
+    _packs[name] = (stamp, pack)
+    return pack
+
+
+def require_packs(document):
+    """Raise a clear error before rendering when a scene's custom character pack is missing or invalid."""
+    for name in sorted({character_rig.custom_name(s['character']) for s in document['scenes']} - {None}):
+        get_pack(name)
+
+
+def _visible(show, expression, action, p):
+    if not show:
+        return True
+    if 'expression' in show and expression not in show['expression']:
+        return False
+    if 'action' in show and action not in show['action']:
+        return False
+    if 'blink' in show and show['blink'] != bool(p['blink']):
+        return False
+    if 'mouth' in show and (show['mouth'] == 'open') != (p['mouth'] > .5 or expression == 'surprised'):
+        return False
+    return True
+
+
+def draw_pack(g, pack, expression='happy', action='idle', speed=1.0, t=0.0, x=0.0, y=0.0, scale=1.0, tilt=0.0):
+    """Draw a layered-artwork character; the pack origin (ground point) lands on the built-ins' ground line."""
+    p = pose_at(t, action, speed)
+    q = t*speed
+    rig = pack.rig
+    drivers = {}
+    for d in rig['motion'].get(action, []):
+        value = d['base']+d['amp']*math.sin(q*d['speed']+d['phase'])
+        drivers.setdefault(d['part'], {}).setdefault(d['channel'], 0.0)
+        drivers[d['part']][d['channel']] += value if d['channel'] != 'scale' else value-1
+    g.save(); g.translate(x, y); g.scale(scale, scale)
+    if tilt:
+        g.translate(0, 100); g.rotate(tilt); g.translate(0, -100)
+    g.ellipse(0, 102, 80-p['jump']*.3, 12, '#214e4429')
+    g.translate(0, 113+p['bob']-p['jump'])                  # ground contact of the built-in characters
+    g.scale(rig['scale'], rig['scale'])
+    frames = {}
+
+    def frame_of(part):
+        if part['id'] in frames:
+            return frames[part['id']]
+        parent = frame_of(pack.by_id[part['parent']]) if part['parent'] else (1, 0, 0, 1, 0, 0)
+        d = drivers.get(part['id'], {})
+        angle, grow = d.get('rotate', 0.0), 1+d.get('scale', 0.0)
+        cos, sin = math.cos(angle)*grow, math.sin(angle)*grow
+        ax, ay = part['at'][0]+d.get('x', 0.0), part['at'][1]+d.get('y', 0.0)
+        local = (cos, sin, -sin, cos, ax, ay)
+        a, b, c, dd, e, f = parent
+        frames[part['id']] = (a*local[0]+c*local[1], b*local[0]+dd*local[1], a*local[2]+c*local[3], b*local[2]+dd*local[3], a*ax+c*ay+e, b*ax+dd*ay+f)
+        return frames[part['id']]
+    for part in pack.order:
+        if _visible(part.get('show'), expression, action, p):
+            a, b, c, d, e, f = frame_of(part)
+            px, py = part['pivot']
+            g.sprite(pack.sprites[part['image']], (a, b, c, d, e-a*px-c*py, f-b*px-d*py))
+    g.restore()
+
+
 def scene_at(t, scenes):
     start = 0.0
     for i, scene in enumerate(scenes):
@@ -258,8 +355,13 @@ class NativeScene:
         scale = (1.05 if portrait else 1.0)*k['size']
         y = (H*.64 if portrait else H*.63)-k['lift']
         jump = math.sin(math.pi*seg(phase, 5.15, 6.85))*80 if action == 'story' and 5.15 < phase < 6.85 else 0
-        draw_character(g, kind=scene['character'], expression=k['expression'], action=action, speed=scene['speed'], t=local,
-                       x=x+walk, y=y-jump, scale=scale, tilt=k['tilt'])
+        custom = character_rig.custom_name(scene['character'])
+        if custom:
+            draw_pack(g, get_pack(custom), expression=k['expression'], action=action, speed=scene['speed'], t=local,
+                      x=x+walk, y=y-jump, scale=scale, tilt=k['tilt'])
+        else:
+            draw_character(g, kind=scene['character'], expression=k['expression'], action=action, speed=scene['speed'], t=local,
+                           x=x+walk, y=y-jump, scale=scale, tilt=k['tilt'])
         sx = W*.76 if portrait else lerp(W*.82, W*.64, ss(seg(phase, 2.8, 5.4)))
         sy = (H*.29 if portrait else H*.33)+math.sin(local*3)*14
         g.ellipse(sx, sy, 65, 65, '#fff4bb42'); self.star(g, sx, sy, 48, '#ffe16c'); self.star(g, sx, sy-2, 36, '#fff3a0')

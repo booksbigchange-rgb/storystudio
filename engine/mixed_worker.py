@@ -23,6 +23,9 @@ def main():
             renderer.verify(Path(args.output), expected['duration'], expected['width'], expected['height'], 24)
             return
         doc = project.load(args.source)
+        if args.action == 'snapshot':
+            import native_scene
+            native_scene.require_packs(doc)       # a missing layered-art character stops the export before any rendering
         frames = round(project.total_duration(doc)*24)
         duration = frames/24
         if args.action == 'render':

@@ -6,9 +6,11 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import tempfile
 
 CHARACTERS = ('fox', 'rabbit', 'bear')
+CUSTOM = re.compile(r'^custom:[A-Za-z0-9_-]{1,32}$')   # a layered-artwork pack in the character library
 EXPRESSIONS = ('happy', 'curious', 'sad', 'surprised')
 ACTIONS = ('story', 'idle', 'wave', 'walk', 'jump', 'talk')
 BACKGROUNDS = ('meadow', 'sunset', 'night')
@@ -118,7 +120,7 @@ def validate(data):
             raise ValueError('Scene caption must be at most 60 characters')
         for field, options in [('character', CHARACTERS), ('expression', EXPRESSIONS),
                                ('action', ACTIONS), ('background', BACKGROUNDS)]:
-            if scene.get(field) not in options:
+            if scene.get(field) not in options and not (field == 'character' and CUSTOM.match(str(scene.get(field)))):
                 raise ValueError(f'Unsupported {field}')
         for field, low, high in [('duration', 1, 30), ('x', .2, .7),
                                  ('size', .6, 1.25), ('speed', .5, 2)]:

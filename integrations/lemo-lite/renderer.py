@@ -20,6 +20,7 @@ import uuid
 import wave
 
 import cartoon_project as project
+import character_rig
 
 BASE = Path(__file__).resolve().parent
 FROZEN = bool(getattr(sys, 'frozen', False))
@@ -201,6 +202,11 @@ def export(args, progress=None, cancel=None):
     document = project.validate(getattr(args, 'document', None) or
                                 (project.load(args.project) if getattr(args, 'project', None) else project.new_project()))
     validate_args(args, document)
+    if render_engine(args) == 'native':
+        import native_scene
+        native_scene.require_packs(document)      # missing layered-art packs fail now, before any frame
+    elif any(character_rig.custom_name(s['character']) for s in document['scenes']):
+        raise ValueError('Layered-art characters need the native renderer (the browser renderer only draws the built-in characters)')
     cancelled = cancel or threading.Event()
     def check_cancel():
         if cancelled.is_set():

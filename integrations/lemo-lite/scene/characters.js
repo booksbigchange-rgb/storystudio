@@ -16,6 +16,10 @@ export function poseAt(t, action='idle', speed=1) {
   };
 }
 export function drawCharacter(ctx, {kind='fox', expression='happy', action='idle', speed=1, t=0, x=0, y=0, scale=1, tilt=0}) {
+  if(String(kind).startsWith('custom:')){ // layered-art packs are drawn by the native renderer; this live preview shows a stand-in
+    ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.fillStyle='#ffffffb0';ctx.beginPath();ctx.roundRect(-70,-170,140,280,24);ctx.fill();
+    ctx.fillStyle='#243e39';ctx.font='700 16px system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('custom character',0,-20);ctx.fillText('see frame preview',0,4);ctx.restore();return;
+  }
   const p=poseAt(t,action,speed);
   const fur=kind==='fox'?'#e98343':kind==='bear'?'#a97954':'#b5a1d5';
   const dark=kind==='fox'?'#ac542f':kind==='bear'?'#76513e':'#8b78ac';

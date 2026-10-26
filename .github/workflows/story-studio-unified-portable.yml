@@ -80,7 +80,7 @@ jobs:
           Copy-Item integrations/lemo-lite/LICENSE-LEMO.md "$pkg/licenses/"
           Get-ChildItem "$env:FFMPEG_LICENSE_ROOT/*" -File -Include 'LICENSE*','COPYING*','README*' -ErrorAction SilentlyContinue | Copy-Item -Destination "$pkg/licenses/"
           Copy-Item artifacts/ffmpeg-provenance.json,artifacts/build-dependencies.json "$pkg/provenance/"
-          Copy-Item docs/audio-mix.md,docs/long-story.md,docs/character-keys-presets.md,docs/shared-timeline.md,docs/timed-titles.md,docs/documentary-templates.md "$pkg/docs/"
+          Copy-Item docs/layered-characters.md,docs/native-renderer.md,docs/section-edits.md,docs/audio-mix.md,docs/long-story.md,docs/character-keys-presets.md,docs/shared-timeline.md,docs/timed-titles.md,docs/documentary-templates.md "$pkg/docs/"
           Copy-Item launchers/install-unified-portable.ps1,launchers/open-unified-portable.ps1 "$pkg/launchers/"
           Copy-Item Install-StoryStudio-Unified-Portable.cmd,Open-StoryStudio-Unified-Portable.cmd $pkg
           "BUILD_PKG=$pkg" >> $env:GITHUB_ENV
