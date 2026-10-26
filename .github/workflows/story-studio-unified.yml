@@ -2,7 +2,7 @@ name: StoryStudio unified Windows regressions
 on:
   push:
     branches: [feature/unified-story-studio]
-    paths: ['engine/**', 'tests/**', 'integrations/lemo-lite/**', '.github/workflows/story-studio-unified.yml']
+    paths: ['engine/**', 'tests/**', 'integrations/lemo-lite/**', 'packaging/get-ffmpeg.ps1', '.github/workflows/story-studio-unified.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,21 +31,7 @@ jobs:
           python -m pip install --index-url https://pypi.org/simple --report artifacts/dependencies.json Pillow==12.3.0 playwright==1.55.0
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
       - name: Verify official FFmpeg archive and install inside workspace
-        run: |
-          $ErrorActionPreference='Stop'
-          $url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
-          Invoke-WebRequest $url -OutFile temp/ffmpeg.zip
-          Invoke-WebRequest "$url.sha256" -OutFile temp/ffmpeg.sha256
-          $published=[regex]::Match((Get-Content temp/ffmpeg.sha256 -Raw),'[a-fA-F0-9]{64}').Value.ToUpper()
-          $actual=(Get-FileHash temp/ffmpeg.zip -Algorithm SHA256).Hash
-          if ($actual -ne $published) { throw 'FFmpeg checksum mismatch' }
-          Expand-Archive temp/ffmpeg.zip temp/ffmpeg-unpacked
-          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
-            $binary=Get-ChildItem temp/ffmpeg-unpacked -Recurse -Filter $name | Select-Object -First 1
-            if (-not $binary) { throw "Missing $name" }
-            Copy-Item $binary.FullName tools/ffmpeg/
-          }
-          @{url=$url;sha256=$actual;version=(& tools/ffmpeg/ffmpeg.exe -version | Select-Object -First 1)} | ConvertTo-Json | Set-Content artifacts/ffmpeg-provenance.json
+        run: ./packaging/get-ffmpeg.ps1
       - name: Existing editor and title unit regressions
         run: |
           python -m unittest discover -s tests -v

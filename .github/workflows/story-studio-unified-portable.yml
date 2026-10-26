@@ -5,6 +5,8 @@ on:
     branches: [feature/unified-story-studio]
     paths:
       - 'packaging/**'
+      - 'integrations/lemo-lite/**'
+      - 'engine/**'
       - 'launchers/*unified-portable*'
       - '*Unified-Portable.cmd'
       - '.github/workflows/story-studio-unified-portable.yml'
@@ -35,23 +37,7 @@ jobs:
           python -m pip install --index-url https://pypi.org/simple --report artifacts/build-dependencies.json Pillow==12.3.0 pyinstaller==6.16.0
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
       - name: Verify official FFmpeg archive against the publisher checksum
-        run: |
-          $ErrorActionPreference='Stop'
-          $url='https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
-          Invoke-WebRequest $url -OutFile temp/ffmpeg.zip
-          Invoke-WebRequest "$url.sha256" -OutFile temp/ffmpeg.sha256
-          $published=[regex]::Match((Get-Content temp/ffmpeg.sha256 -Raw),'[a-fA-F0-9]{64}').Value.ToUpper()
-          $actual=(Get-FileHash temp/ffmpeg.zip -Algorithm SHA256).Hash
-          if ($actual -ne $published) { throw 'FFmpeg checksum mismatch' }
-          Expand-Archive temp/ffmpeg.zip temp/ffmpeg-unpacked
-          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
-            $binary=Get-ChildItem temp/ffmpeg-unpacked -Recurse -Filter $name | Select-Object -First 1
-            if (-not $binary) { throw "Missing $name" }
-            Copy-Item $binary.FullName tools/ffmpeg/
-          }
-          $licenseRoot=(Get-ChildItem temp/ffmpeg-unpacked -Directory | Select-Object -First 1).FullName
-          "FFMPEG_LICENSE_ROOT=$licenseRoot" >> $env:GITHUB_ENV
-          @{url=$url;sha256=$actual;publisher_checksum_verified=$true;version=(& tools/ffmpeg/ffmpeg.exe -version | Select-Object -First 1)} | ConvertTo-Json | Set-Content artifacts/ffmpeg-provenance.json -Encoding UTF8
+        run: ./packaging/get-ffmpeg.ps1
       - name: Syntax and unit regressions
         run: |
           python -m compileall -q engine integrations/lemo-lite packaging
