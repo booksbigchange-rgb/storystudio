@@ -173,7 +173,7 @@ class StudioApp(tk.Tk):
         self.apply_button=ttk.Button(scene_tab,text='Apply scene edits',style='Accent.TButton',command=self.apply_scene)
         self.apply_button.pack(fill='x',pady=14)
         ttk.Label(scene_tab,text='Add scenes to tell a longer story.\nSave a project to edit it again later.',foreground=MUTED,wraplength=240).pack(anchor='w')
-        self.character_combo=field(motion_tab,'Character','character',project.CHARACTERS+self.custom_names())
+        self.character_combo=field(motion_tab,'Character','character',list(project.CHARACTERS)+self.custom_names())
         self.character_combo.configure(postcommand=self.refresh_characters)
         self.pack_buttons={}
         for label,action in [('Import layered character…',self.import_pack),('Create example layers…',self.create_example)]:
@@ -215,7 +215,7 @@ class StudioApp(tk.Tk):
         except OSError:return []
 
     def refresh_characters(self):
-        self.character_combo.configure(values=project.CHARACTERS+self.custom_names())
+        self.character_combo.configure(values=list(project.CHARACTERS)+self.custom_names())
 
     def import_pack(self):
         folder=filedialog.askdirectory(parent=self,title='Choose a folder of aligned layer PNGs (or a finished pack)')
