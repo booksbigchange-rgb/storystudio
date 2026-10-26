@@ -19,7 +19,7 @@ import threading
 import uuid
 import wave
 
-import project
+import cartoon_project as project
 
 BASE = Path(__file__).resolve().parent
 FROZEN = bool(getattr(sys, 'frozen', False))
@@ -27,8 +27,7 @@ def _frozen_root():
     # The unified portable build keeps this program in a "character" subfolder of the shared top folder.
     if os.getenv('STORYSTUDIO_HOME'):
         return Path(os.environ['STORYSTUDIO_HOME']).resolve()
-    here = Path(sys.executable).resolve().parent
-    return here.parent if here.name == 'character' and (here.parent/'StoryStudio.exe').is_file() else here
+    return Path(sys.executable).resolve().parent
 
 
 ROOT = _frozen_root() if FROZEN else BASE.parents[1]
@@ -127,7 +126,10 @@ def local_server(document=None):
 
 @contextmanager
 def scene_page(document, width, height):
-    from playwright.sync_api import sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError('The browser renderer is not installed (the portable build uses the native renderer).') from None
     with BROWSER_LOCK, local_server(document) as url, sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=find_chrome(), headless=True,
                                     args=['--disable-gpu'])

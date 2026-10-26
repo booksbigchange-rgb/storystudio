@@ -37,14 +37,10 @@ def main(argv):
     gui = load(evidence/'compiled-character-gui/gui-results.json')
     if gui:
         lines += [f"- Character editor compiled GUI test: **{gui['result']}** — " + ', '.join(gui['checks'])]
-    for name in ('landscape', 'portrait'):
-        details = load(evidence/f'compiled-character-{name}.json')
-        if details:
-            lines.append(f"- Character {name} self-test export: {details['summary']}")
     lines += ['', '## Not verified here', '',
               '- Everything above ran on a clean GitHub-hosted Windows runner, not on your computer.',
               '- Not tested: your hardware (Ryzen 3 / 12 GB / integrated graphics), your display scaling, long real projects, listening quality of mixes, Windows Defender/SmartScreen behavior (the executables are unsigned and may prompt).',
-              '- The character editor and character export need Microsoft Edge or Google Chrome installed (existing browser; none is bundled).',
+              '- Character scenes are drawn natively. Only *Play live preview* opens Microsoft Edge or Google Chrome (already installed; none is bundled).',
               '', '## Verify your download', '',
               'In PowerShell: `Get-FileHash -Algorithm SHA256 <zip>` and compare with the `.sha256` file, or use `Install-StoryStudio-Unified-Portable.cmd`, which checks it for you. After installing, every file can be re-checked against `SHA256SUMS.txt`.', '']
     (root/'BUILD-REPORT.md').write_text('\n'.join(lines), encoding='utf-8')

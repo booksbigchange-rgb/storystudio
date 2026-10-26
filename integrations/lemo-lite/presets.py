@@ -12,7 +12,7 @@ from pathlib import Path
 import tempfile
 import uuid
 
-import project
+import cartoon_project as project
 
 MAX_PRESETS = 50
 FIELDS = ('character', 'expression', 'action', 'x', 'size', 'speed')

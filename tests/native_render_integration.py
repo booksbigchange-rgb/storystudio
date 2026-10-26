@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'integrations/lemo-lite'))
 from PIL import Image, ImageChops, ImageStat
 import native_scene
-import project
+import cartoon_project as project
 import renderer
 
 folder = ROOT/'exports'/('native-render-'+uuid.uuid4().hex)

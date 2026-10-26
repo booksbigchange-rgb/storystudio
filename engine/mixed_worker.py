@@ -16,7 +16,7 @@ def main():
     args = parser.parse_args()
     if args.engine == 'cartoon' or args.action == 'verify':
         sys.path.insert(0, str(ROOT/'integrations/lemo-lite'))
-        import project
+        import cartoon_project as project
         import renderer
         if args.action == 'verify':
             expected = json.loads(Path(args.source).read_text(encoding='utf-8'))

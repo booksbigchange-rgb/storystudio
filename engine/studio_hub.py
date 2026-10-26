@@ -36,12 +36,9 @@ def command(kind, path=None):
     if kind not in ('documentary', 'cartoon', 'mixed'):
         raise ValueError('Unknown editor')
     if runtime.FROZEN:
-        # Cartoon editing lives in its own executable; both editors define a module called project.
-        result = [str(runtime.helper('character' if kind == 'cartoon' else 'hub'))]
-        if kind != 'cartoon':
-            result += ['--editor', kind]
+        result = [str(runtime.helper('hub')), '--editor', kind]
         if path:
-            result += ['--open' if kind == 'cartoon' else '--project', str(Path(path).resolve())]
+            result += ['--project', str(Path(path).resolve())]
         return result
     result = [sys.executable, str(Path(__file__).resolve()), '--editor', kind]
     if path:
@@ -63,10 +60,9 @@ def run_editor(kind, path=None, smoke=False):
         else:
             root.mainloop()
     elif kind == 'cartoon':
-        # Both engines have a project.py. A fresh process and explicit search path
-        # keep their imports separate, including when launched from either cwd.
+        # The character project model is cartoon_project (the documentary one is project), so both editors can share a process.
         sys.path.insert(0, str(ROOT / 'integrations/lemo-lite'))
-        import project
+        import cartoon_project as project
         from studio_ui import StudioApp
         doc = project.load(path) if path else None
         app = StudioApp(auto_preview=not smoke)

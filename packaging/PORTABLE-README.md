@@ -11,7 +11,7 @@ Double-click `StoryStudio.exe`. Choose a workspace:
 - **Shared timeline** – combine documentary and character projects (up to 200 sections / 60 minutes),
   add timed text and a shared audio mix (music with ducking, narration, sound effects), export MP4.
 - **Character animation** – reusable cutout characters with animation keys and presets
-  (`character\StoryStudioCharacter.exe`, started for you).
+  (all inside `StoryStudio.exe`).
 
 If your studio uses `D:\StoryStudio`, install and start with the root launchers instead:
 `Install-StoryStudio-Unified-Portable.cmd -Zip <zip>` then `Open-StoryStudio-Unified-Portable.cmd`.
@@ -21,8 +21,8 @@ If your studio uses `D:\StoryStudio`, install and start with the root launchers 
 | Path | What |
 |---|---|
 | `StoryStudio.exe` | hub, documentary and shared-timeline editors |
-| `character\StoryStudioCharacter.exe` | character editor |
-| `StoryStudioWorker.exe`, `character\StoryStudioCharacterWorker.exe` | background export helpers (no window) |
+| `StoryStudio.exe` | hub plus the documentary, character and shared-timeline editors (one program) |
+| `StoryStudioWorker.exe` | background export helper for both engines (no window) |
 | `bin\ffmpeg.exe`, `bin\ffprobe.exe` | bundled FFmpeg (checksum-verified official build, see `provenance\`) |
 | `projects\`, `exports\` | your work; new exports never overwrite existing files |
 | `MANIFEST.json`, `SHA256SUMS.txt`, `BUILD-REPORT.md` | what is inside and how it was tested |

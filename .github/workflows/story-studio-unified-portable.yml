@@ -32,7 +32,7 @@ jobs:
       - name: Install pinned build tools from official PyPI and record provenance
         run: |
           New-Item -Force -ItemType Directory artifacts/evidence, release, temp, tools/ffmpeg | Out-Null
-          python -m pip install --index-url https://pypi.org/simple --report artifacts/build-dependencies.json Pillow==12.3.0 playwright==1.55.0 pyinstaller==6.16.0
+          python -m pip install --index-url https://pypi.org/simple --report artifacts/build-dependencies.json Pillow==12.3.0 pyinstaller==6.16.0
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
       - name: Verify official FFmpeg archive against the publisher checksum
         run: |
@@ -62,21 +62,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Unified unit tests failed' }
           python -m unittest discover -s integrations/lemo-lite/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'Character unit tests failed' }
-      - name: Build the two program groups
+      - name: Build the single-runtime program
         run: |
           $ErrorActionPreference='Stop'
-          python -m PyInstaller --noconfirm --clean --distpath dist/engine --workpath build/engine packaging/unified-engine.spec
-          if ($LASTEXITCODE -ne 0) { throw 'Engine build failed' }
-          python -m PyInstaller --noconfirm --clean --distpath dist/character --workpath build/character packaging/unified-character.spec
-          if ($LASTEXITCODE -ne 0) { throw 'Character build failed' }
+          python -m PyInstaller --noconfirm --clean --distpath dist/app --workpath build/app packaging/unified.spec
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           $short=(git rev-parse --short=7 HEAD).Trim()
           $version="2.0.0-$short"
           "BUILD_VERSION=$version" >> $env:GITHUB_ENV
           "BUILD_COMMIT=$((git rev-parse HEAD).Trim())" >> $env:GITHUB_ENV
           $pkg="dist/StoryStudio-Unified-$version"
           New-Item -ItemType Directory $pkg | Out-Null
-          Copy-Item dist/engine/StoryStudio/* $pkg -Recurse
-          Copy-Item dist/character/character "$pkg/character" -Recurse
+          Copy-Item dist/app/StoryStudio/* $pkg -Recurse
           New-Item -Force -ItemType Directory "$pkg/bin","$pkg/licenses","$pkg/provenance","$pkg/docs","$pkg/launchers" | Out-Null
           Copy-Item tools/ffmpeg/ffmpeg.exe,tools/ffmpeg/ffprobe.exe "$pkg/bin/"
           Copy-Item packaging/PORTABLE-README.md "$pkg/README.md"
@@ -87,7 +84,7 @@ jobs:
           Copy-Item launchers/install-unified-portable.ps1,launchers/open-unified-portable.ps1 "$pkg/launchers/"
           Copy-Item Install-StoryStudio-Unified-Portable.cmd,Open-StoryStudio-Unified-Portable.cmd $pkg
           "BUILD_PKG=$pkg" >> $env:GITHUB_ENV
-          foreach ($exe in @('StoryStudio.exe','StoryStudioWorker.exe','character/StoryStudioCharacter.exe','character/StoryStudioCharacterWorker.exe','bin/ffmpeg.exe','bin/ffprobe.exe')) {
+          foreach ($exe in @('StoryStudio.exe','StoryStudioWorker.exe','bin/ffmpeg.exe','bin/ffprobe.exe')) {
             if (-not (Test-Path "$pkg/$exe")) { throw "Missing $exe" }
           }
       - name: Test the compiled build (on a copy; the package folder stays pristine)
@@ -104,20 +101,8 @@ jobs:
           $app=(Resolve-Path "$test/StoryStudio.exe").Path
           $code=Run-App $app @('--self-test','--output',"$evidence/compiled-unified")
           if ($code -ne 0) { Get-Content "$evidence/compiled-unified/selftest.log" -ErrorAction SilentlyContinue; throw "Unified self-test failed: $code" }
-          $char=(Resolve-Path "$test/character/StoryStudioCharacter.exe").Path
-          $code=Run-App $char @('--gui-test','--output',"$evidence/compiled-character-gui")
+          $code=Run-App $app @('--gui-test','--output',"$evidence/compiled-character-gui")
           if ($code -ne 0) { Get-Content "$test/logs/portable-self-test.log" -ErrorAction SilentlyContinue; throw "Character GUI test failed: $code" }
-          $ffprobe=(Resolve-Path "$test/bin/ffprobe.exe").Path
-          $ffmpeg=(Resolve-Path "$test/bin/ffmpeg.exe").Path
-          foreach ($format in @(@{name='landscape';width=640;height=360},@{name='portrait';width=360;height=640})) {
-            $out="$evidence/compiled-character-$($format.name).mp4"
-            $code=Run-App $char @('--self-test','--output',$out,'--duration','2','--fps','12','--width',"$($format.width)",'--height',"$($format.height)")
-            if ($code -ne 0 -or -not (Test-Path $out)) { Get-Content "$test/logs/portable-self-test.log" -ErrorAction SilentlyContinue; throw "Character $($format.name) export failed" }
-            & $ffmpeg -v error -xerror -i $out -f null -
-            if ($LASTEXITCODE -ne 0) { throw 'Compiled character MP4 decode failed' }
-            $info=& $ffprobe -v error -count_frames -show_entries stream=codec_name,width,height,nb_read_frames -of csv=p=0 $out
-            @{summary="$($format.name) 2 s export, decoded; streams: $($info -join ' | ')"} | ConvertTo-Json | Set-Content "$evidence/compiled-character-$($format.name).json" -Encoding UTF8
-          }
       - name: Manifest, checksums, report and archive
         run: |
           $ErrorActionPreference='Stop'
@@ -150,7 +135,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File $install -Zip $zip -StudioRoot $root
           if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
           $dest="$root/exports/unified-portable-$env:BUILD_VERSION"
-          foreach ($path in @('StoryStudio.exe','character/StoryStudioCharacter.exe','bin/ffmpeg.exe','MANIFEST.json','SHA256SUMS.txt','BUILD-REPORT.md','Open-StoryStudio-Unified-Portable.cmd')) {
+          foreach ($path in @('StoryStudio.exe','bin/ffmpeg.exe','MANIFEST.json','SHA256SUMS.txt','BUILD-REPORT.md','Open-StoryStudio-Unified-Portable.cmd')) {
             if (-not (Test-Path "$dest/$path")) { throw "Installed folder lacks $path" }
           }
           if (-not (Test-Path "$dest.install-report.txt")) { throw 'Install report missing' }

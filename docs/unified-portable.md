@@ -8,13 +8,12 @@ A new, separate build of the unified application. The earlier character-only bui
 
 | Program | Role |
 |---|---|
-| `StoryStudio.exe` | hub, documentary editor, shared timeline (with audio mix, timed text, 200 sections) |
-| `character\StoryStudioCharacter.exe` | character editor (animation keys, presets) |
-| `StoryStudioWorker.exe`, `character\StoryStudioCharacterWorker.exe` | hidden export helpers |
+| `StoryStudio.exe` | hub, documentary editor, character editor and shared timeline in one program |
+| `StoryStudioWorker.exe` | hidden export helper for both engines |
 | `bin\ffmpeg.exe`, `bin\ffprobe.exe` | official FFmpeg build, publisher checksum verified at build time |
 
-Two program groups are needed because the documentary and character editors each contain a module named
-`project`; each group has its own runtime. They share one top folder for projects, exports, temp, logs and FFmpeg.
+One runtime serves both editors (the character model is `cartoon_project`, the documentary one `project`). The browser
+renderer (Playwright) is not bundled; export and previews use the native renderer. Projects, exports, temp, logs and FFmpeg live in the one folder.
 Nothing is installed on C:, no Docker, no cloud rendering.
 
 ## Install and start (on your computer)

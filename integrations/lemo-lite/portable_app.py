@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import traceback
 import renderer
-import project
+import cartoon_project as project
 
 APP_DIR=renderer.ROOT
 

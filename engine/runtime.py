@@ -1,20 +1,17 @@
 """Where the application lives, for source checkouts and the PyInstaller portable build.
 
-Portable layout (all exes share one top folder so projects, exports and FFmpeg are shared):
-  StoryStudio.exe            hub, documentary and shared-timeline editors (windowed)
-  StoryStudioWorker.exe      documentary export worker and process gate (console, never shown)
-  character/StoryStudioCharacter.exe        character editor (windowed)
-  character/StoryStudioCharacterWorker.exe  character export worker and verifier (console, never shown)
+Portable layout (one runtime, one folder):
+  StoryStudio.exe        hub plus the documentary, character and shared-timeline editors (windowed)
+  StoryStudioWorker.exe  export workers for both engines and the process gate (console, never shown)
   bin/ffmpeg.exe, bin/ffprobe.exe
-The two groups are separate builds because both editors contain a module named ``project``.
+The documentary model is ``project`` and the character model is ``cartoon_project`` so both live in one process.
 """
 import os
 from pathlib import Path
 import sys
 
 FROZEN = bool(getattr(sys, 'frozen', False))
-HELPERS = {'documentary': 'StoryStudioWorker.exe', 'gate': 'StoryStudioWorker.exe',
-           'cartoon': 'character/StoryStudioCharacterWorker.exe', 'character': 'character/StoryStudioCharacter.exe',
+HELPERS = {'documentary': 'StoryStudioWorker.exe', 'cartoon': 'StoryStudioWorker.exe', 'gate': 'StoryStudioWorker.exe',
            'hub': 'StoryStudio.exe'}
 
 
@@ -24,8 +21,7 @@ def app_root(source_file=None):
         override = os.environ.get('STORYSTUDIO_HOME')
         if override:
             return Path(override).resolve()
-        here = Path(sys.executable).resolve().parent
-        return here.parent if here.name == 'character' else here
+        return Path(sys.executable).resolve().parent
     return Path(source_file or __file__).resolve().parents[1]
 
 

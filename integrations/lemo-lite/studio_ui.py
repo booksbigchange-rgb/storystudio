@@ -18,7 +18,7 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 
 import presets
-import project
+import cartoon_project as project
 import renderer
 
 BG = '#eef3ef'

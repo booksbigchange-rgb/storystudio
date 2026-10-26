@@ -34,7 +34,7 @@ class FrozenRouting(unittest.TestCase):
                 self.assertEqual(runtime.app_root(), Path(home).resolve())
                 self.assertEqual(runtime.helper('hub'), Path(home).resolve()/'StoryStudio.exe')
                 self.assertEqual(runtime.helper('gate'), Path(home).resolve()/'StoryStudioWorker.exe')
-                self.assertEqual(runtime.helper('cartoon'), Path(home).resolve()/'character'/'StoryStudioCharacterWorker.exe')
+                self.assertEqual(runtime.helper('cartoon'), Path(home).resolve()/'StoryStudioWorker.exe')
 
     def test_editors_and_workers_route_to_the_right_exe(self):
         with tempfile.TemporaryDirectory() as home:
@@ -43,20 +43,16 @@ class FrozenRouting(unittest.TestCase):
                 home = Path(home).resolve()
                 self.assertEqual(studio_hub.command('documentary', 'p.json')[:3], [str(home/'StoryStudio.exe'), '--editor', 'documentary'])
                 self.assertEqual(studio_hub.command('mixed'), [str(home/'StoryStudio.exe'), '--editor', 'mixed'])
-                character = studio_hub.command('cartoon', 'p.json')
-                self.assertEqual(character[0], str(home/'character'/'StoryStudioCharacter.exe'))
-                self.assertEqual(character[1], '--open')
+                self.assertEqual(studio_hub.command('cartoon', 'p.json')[:3], [str(home/'StoryStudio.exe'), '--editor', 'cartoon'])
                 self.assertEqual(mixed_render.worker('documentary'), [str(home/'StoryStudioWorker.exe')])
-                self.assertEqual(mixed_render.worker('cartoon'), [str(home/'character'/'StoryStudioCharacterWorker.exe')])
+                self.assertEqual(mixed_render.worker('cartoon'), [str(home/'StoryStudioWorker.exe')])
 
-    def test_character_exe_finds_the_shared_top_folder(self):
-        with tempfile.TemporaryDirectory() as home:
-            home = Path(home).resolve()
-            with patch.multiple(runtime, FROZEN=True), patch.dict('os.environ', {}, clear=False), \
-                    patch.object(sys, 'executable', str(home/'character'/'StoryStudioCharacter.exe')):
-                import os
-                os.environ.pop('STORYSTUDIO_HOME', None)
-                self.assertEqual(runtime.app_root(), home)
+    def test_both_models_live_in_one_process(self):
+        sys.path.insert(0, str(ROOT/'integrations/lemo-lite'))
+        import cartoon_project
+        import project
+        self.assertTrue(hasattr(project, 'read_project') and not hasattr(project, 'key_values'))
+        self.assertTrue(hasattr(cartoon_project, 'key_values') and not hasattr(cartoon_project, 'read_project'))
 
     def test_prepare_environment_scopes_everything_to_the_folder(self):
         with tempfile.TemporaryDirectory() as home:

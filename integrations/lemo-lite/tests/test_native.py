@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import native_scene
-import project
+import cartoon_project as project
 
 
 def doc(**scene):

@@ -11,7 +11,7 @@ from PIL import ImageGrab
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'integrations/lemo-lite'))
 import presets
-import project
+import cartoon_project as project
 from studio_ui import StudioApp
 
 folder = ROOT/'exports'/('cartoon-keys-gui-'+uuid.uuid4().hex)

@@ -15,7 +15,7 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageChops, ImageStat
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import project
+import cartoon_project as project
 import renderer
 
 

@@ -11,7 +11,7 @@ import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-import project
+import cartoon_project as project
 
 TAU = math.tau
 COLORS = {'meadow': ('#8cdeed', '#e1f5d0', '#75b896', '#98cf78'), 'sunset': ('#efb0b1', '#ffe0aa', '#bf91a3', '#d5b18c'),

@@ -6,7 +6,7 @@ import time
 from unittest.mock import patch
 
 from PIL import ImageGrab
-import project
+import cartoon_project as project
 from studio_ui import StudioApp
 
 

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import urllib.request
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import project
+import cartoon_project as project
 import renderer
 
 
@@ -59,7 +59,7 @@ class ProjectTests(unittest.TestCase):
             doc=project.new_project();doc['scenes'][0]['duration']=0
             with self.assertRaises(ValueError):project.save(doc,path)
             self.assertEqual(path.read_bytes(),original)
-            with patch('project.os.replace',side_effect=PermissionError('test')):
+            with patch('cartoon_project.os.replace',side_effect=PermissionError('test')):
                 with self.assertRaises(PermissionError):project.save(project.new_project(),path)
             self.assertEqual(path.read_bytes(),original)
             self.assertEqual(list(Path(td).glob('.story-*')),[])

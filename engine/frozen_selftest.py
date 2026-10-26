@@ -63,7 +63,7 @@ def checks(folder):
                      keys=[{'at': 0, 'x': .25}, {'at': 1, 'x': .6, 'tilt': .2}])])), encoding='utf-8')
     hashes = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in (documentary, cartoon, folder/'narration.wav')}
     # The helper executables and bundled tools must exist exactly where the launcher expects them.
-    for name in ('hub', 'gate', 'cartoon', 'character'):
+    for name in ('hub', 'gate', 'cartoon'):
         assert runtime_helper(name).is_file(), name
     done.append('helper executables present')
     # Editors open (smoke) from the compiled hub.
@@ -102,19 +102,32 @@ def checks(folder):
         root.update(); time.sleep(.05)
     assert errors and 'protected' in errors[-1] and hashlib.sha256(output.read_bytes()).hexdigest() == first
     done.append('mixed export through compiled workers; existing export protected')
+    # Same story in portrait: both orientations through the compiled workers.
+    portrait = folder/'unified-export-portrait.mp4'
+    app.format.set('portrait'); app.change_format()
+    with patch('mixed_editor.filedialog.asksaveasfilename', return_value=str(portrait)):
+        app.export()
+    deadline = time.monotonic()+420
+    while app.busy and time.monotonic() < deadline:
+        root.update(); time.sleep(.05)
+    assert portrait.is_file(), (errors, app.status.get())
     app.dirty = False
     app.close()
-    probe = mixed_render.tool('ffprobe')
-    info = json.loads(subprocess.run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', str(output)],
-                                     capture_output=True, text=True, check=True).stdout)
-    video = next(s for s in info['streams'] if s['codec_type'] == 'video')
-    sound = [s for s in info['streams'] if s['codec_type'] == 'audio']
-    assert video['codec_name'] == 'h264' and (video['width'], video['height']) == (1280, 720) and int(video['nb_read_frames']) == 96, video
-    assert sound and sound[0]['codec_name'] == 'aac' and abs(float(info['format']['duration'])-4) < .15
-    decode = subprocess.run([mixed_render.tool('ffmpeg'), '-v', 'error', '-xerror', '-i', str(output), '-f', 'null', '-'], capture_output=True, text=True)
-    assert decode.returncode == 0 and not decode.stderr.strip(), decode.stderr
+
+    def verify(path, size):
+        probe = mixed_render.tool('ffprobe')
+        info = json.loads(subprocess.run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', str(path)],
+                                         capture_output=True, text=True, check=True).stdout)
+        video = next(s for s in info['streams'] if s['codec_type'] == 'video')
+        sound = [s for s in info['streams'] if s['codec_type'] == 'audio']
+        assert video['codec_name'] == 'h264' and (video['width'], video['height']) == size and int(video['nb_read_frames']) == 96, video
+        assert sound and sound[0]['codec_name'] == 'aac' and abs(float(info['format']['duration'])-4) < .15
+        decode = subprocess.run([mixed_render.tool('ffmpeg'), '-v', 'error', '-xerror', '-i', str(path), '-f', 'null', '-'], capture_output=True, text=True)
+        assert decode.returncode == 0 and not decode.stderr.strip(), decode.stderr
+    verify(output, (1280, 720))
+    verify(portrait, (720, 1280))
     assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in hashes} == hashes, 'source project or audio changed'
-    done.append('H.264/AAC 1280x720, 96 frames, 4 s, fully decoded; sources unchanged')
+    done.append('H.264/AAC 1280x720 and 720x1280, 96 frames, 4 s each, fully decoded; sources unchanged')
     return dict(status='passed', checks=done, frames=96, sha256=first, output=output.name)
 
 

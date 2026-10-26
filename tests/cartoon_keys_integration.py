@@ -13,7 +13,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'integrations/lemo-lite'))
-import project
+import cartoon_project as project
 import renderer
 import argparse
 
@@ -107,11 +107,9 @@ checks.append(f'decoded 48-frame MP4 moves right: centroid {positions[0]:.0f}→
 
 # 4. Keyed cartoon section inside a mixed timeline (shared engine, audio mix and no-overwrite).
 sys.path.insert(0, str(ROOT/'engine'))
-sys.modules.pop('project', None)
-import importlib
-sys.path.remove(str(ROOT/'integrations/lemo-lite'))
-engine_project = importlib.import_module('project')
-assert hasattr(engine_project, 'read_project'), 'engine project module expected'
+import project as engine_project            # the documentary model; both models now live in one process
+assert hasattr(engine_project, 'read_project') and not hasattr(engine_project, 'key_values')
+assert hasattr(project, 'key_values')
 import mixed_project as model
 from mixed_render import export
 source = folder/'keyed.json'
