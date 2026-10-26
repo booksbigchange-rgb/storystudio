@@ -33,6 +33,14 @@ def _volume(value, label, default=None):
     return float(value)
 
 
+def _fade(value, label, default):
+    if value is None:
+        return default
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 30:
+        raise ValueError(f'{label} must be 0–30 seconds')
+    return float(value)
+
+
 def _file(value, label):
     if not isinstance(value, str) or not value.strip() or len(value) > 500 or '\0' in value:
         raise ValueError(f'{label} needs a local audio file')
@@ -49,7 +57,8 @@ def _clip(item, label):
     start = item.get('start', 0)
     if type(start) not in (int, float) or not math.isfinite(start) or not 0 <= start <= 3600:
         raise ValueError(f'{label} start must be 0–3600 seconds')
-    return dict(file=_file(item.get('file'), label), start=float(start), volume=_volume(item.get('volume'), label, 1.0))
+    return dict(file=_file(item.get('file'), label), start=float(start), volume=_volume(item.get('volume'), label, 1.0),
+                fade_in=_fade(item.get('fade_in'), label+' fade in', 0.0), fade_out=_fade(item.get('fade_out'), label+' fade out', 0.0))
 
 
 def validate_audio(audio):
@@ -70,7 +79,8 @@ def validate_audio(audio):
     if music is not None:
         if not isinstance(music, dict):
             raise ValueError('Music is not a valid track')
-        result['music'] = dict(file=_file(music.get('file'), 'Music'), volume=_volume(music.get('volume'), 'Music', .5))
+        result['music'] = dict(file=_file(music.get('file'), 'Music'), volume=_volume(music.get('volume'), 'Music', .5),
+                               fade_in=_fade(music.get('fade_in'), 'Music fade in', .5), fade_out=_fade(music.get('fade_out'), 'Music fade out', 1.5))
     for key, limit, label in (('narration', MAX_NARRATION, 'narration'), ('sfx', MAX_SFX, 'sound effect')):
         clips = audio.get(key, [])
         if not isinstance(clips, list) or len(clips) > limit:
@@ -139,12 +149,25 @@ def check_media(audio, duration, run, ffmpeg='ffmpeg', ffprobe='ffprobe'):
     return lengths
 
 
-def build(audio, duration):
+def build(audio, duration, lengths=None):
     """Return (input arguments, filter_complex, output label).
 
     Input 0 is the joined section video/audio. Further inputs follow in the order
-    music, narration clips, sound-effect clips.
+    music, narration clips, sound-effect clips. ``lengths`` ({file: seconds}, from check_media)
+    is needed only for clip fade-outs.
     """
+    lengths = lengths or {}
+
+    def clip_fades(clip):
+        length = min(lengths.get(clip['file'], 0), max(0, duration-clip['start']))
+        fade_in = min(clip['fade_in'], length) if length else clip['fade_in']
+        text = f',afade=t=in:st=0:d={fade_in:.3f}' if fade_in else ''
+        if clip['fade_out'] and length:
+            fade_out = min(clip['fade_out'], max(length-fade_in, 0))
+            if fade_out:
+                text += f',afade=t=out:st={length-fade_out:.6f}:d={fade_out:.3f}'
+        return text
+
     inputs, parts = [], []
     index = 0
 
@@ -157,14 +180,15 @@ def build(audio, duration):
     music = None
     if audio['music']:
         m = add(audio['music']['file'], loop=True)
-        fade = min(1.5, duration/4)
-        parts.append(f'[{m}:a]{FORMAT},atrim=duration={duration:.6f},asetpts=PTS-STARTPTS,volume={audio["music"]["volume"]:g},'
-                     f'afade=t=in:d={min(.5, duration/8):.3f},afade=t=out:st={duration-fade:.6f}:d={fade:.3f}[music]')
+        fade_in = min(audio['music']['fade_in'], duration/2)
+        fade_out = min(audio['music']['fade_out'], duration/2)
+        fades = (f',afade=t=in:d={fade_in:.3f}' if fade_in else '') + (f',afade=t=out:st={duration-fade_out:.6f}:d={fade_out:.3f}' if fade_out else '')
+        parts.append(f'[{m}:a]{FORMAT},atrim=duration={duration:.6f},asetpts=PTS-STARTPTS,volume={audio["music"]["volume"]:g}{fades}[music]')
         music = 'music'
     voice = ['src']
     for i, clip in enumerate(audio['narration']):
         n = add(clip['file'])
-        parts.append(f'[{n}:a]{FORMAT},volume={clip["volume"]:g},adelay={round(clip["start"]*1000)}:all=1[nar{i}]')
+        parts.append(f'[{n}:a]{FORMAT},volume={clip["volume"]:g}{clip_fades(clip)},adelay={round(clip["start"]*1000)}:all=1[nar{i}]')
         voice.append(f'nar{i}')
     if len(voice) > 1:
         parts.append(''.join(f'[{v}]' for v in voice)+f'amix=inputs={len(voice)}:normalize=0:duration=longest[voice]')
@@ -181,7 +205,7 @@ def build(audio, duration):
         final += ['voice'] + ([music] if music else [])
     for i, clip in enumerate(audio['sfx']):
         s = add(clip['file'])
-        parts.append(f'[{s}:a]{FORMAT},volume={clip["volume"]:g},adelay={round(clip["start"]*1000)}:all=1[sfx{i}]')
+        parts.append(f'[{s}:a]{FORMAT},volume={clip["volume"]:g}{clip_fades(clip)},adelay={round(clip["start"]*1000)}:all=1[sfx{i}]')
         final.append(f'sfx{i}')
     tail = f'atrim=duration={duration:.6f},alimiter=limit=0.89:level=0,aresample={RATE}'
     if len(final) > 1:

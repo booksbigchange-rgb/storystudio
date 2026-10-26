@@ -17,6 +17,13 @@ no `audio` block keeps exactly the audio of its source projects.
   their own level. Sound effects are not ducked. Clips running past the end are trimmed.
 - A final limiter (ceiling about -1 dBFS) prevents clipping when levels add up.
 
+## Audio timeline (drag and fades)
+The dialog shows three lanes (Music, Narration, Sound effects) over the whole story with real waveforms (decoded in
+the background by FFmpeg and cached under `cache\waveforms`). Click a clip to select it; drag it left or right to move it
+(snaps to frames, stays inside the story). Yellow lines show fades. Each clip has **Fade in / Fade out** seconds (0–30);
+music has its own fade in/out (defaults 0.5 s / 1.5 s, as before). Typing exact times in the form still works.
+Fade-outs need the file length, which the exporter measures; a fade-out never starts before the fade-in ends.
+
 ## Rules
 
 - Files must be local `.wav .mp3 .flac .ogg .m4a .aac`. URLs and network paths are rejected.
@@ -32,8 +39,8 @@ no `audio` block keeps exactly the audio of its source projects.
 
 ```json
 "audio": {"source_volume": 1.0, "duck": "medium",
-  "music": {"file": "media/bed.wav", "volume": 0.5},
-  "narration": [{"file": "media/vo.wav", "start": 3.0, "volume": 1.0}],
+  "music": {"file": "media/bed.wav", "volume": 0.5, "fade_in": 0.5, "fade_out": 1.5},
+  "narration": [{"file": "media/vo.wav", "start": 3.0, "volume": 1.0, "fade_in": 0.2, "fade_out": 0.4}],
   "sfx": [{"file": "media/hit.wav", "start": 5.0, "volume": 1.0}]}
 ```
 Older readers that validate strictly will not understand the new field; older
@@ -48,6 +55,7 @@ timelines open unchanged.
 - `tests/mixed_audio_integration.py [--cartoon]` – real exports in both orientations, decoded and measured,
   no-overwrite, bad media rejected before rendering, cancel during mix then retry, source hashes unchanged.
 - `tests/mixed_audio_gui_integration.py` – real Tk dialog, GUI export, no-overwrite and missing-media errors.
+- `tests/mixed_audio_timeline_gui_integration.py` – real Tk timeline: waveforms arrive, real mouse drag (frame-snapped, clamped), fades, decoded export matches the dragged position.
 - Run all on Windows with `Verify-Audio-Mix.cmd`.
 
 Automated tests use synthetic tones, not real music or speech. Listening on your

@@ -130,7 +130,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
         mix = doc.get('audio') if mixed_audio.active(doc.get('audio')) else None
         if mix:
             # Media problems must stop the export before any section is rendered.
-            mixed_audio.check_media(mix, duration, lambda command: run(command, log), ffmpeg, probe)
+            media_lengths = mixed_audio.check_media(mix, duration, lambda command: run(command, log), ffmpeg, probe)
         cards = []
         for i, item in enumerate(titles):
             image, xy = card(item, width, height)
@@ -177,7 +177,7 @@ def export(doc, output, progress=lambda _: None, control=None, keep_intermediate
             join = [ffmpeg, '-v', 'error', '-nostdin', '-n', '-f', 'concat', '-safe', '1', '-i', str(concat)]
             if mix:
                 progress('Mixing narration, music and sound effects…')
-                inputs, graph, label = mixed_audio.build(mix, duration)
+                inputs, graph, label = mixed_audio.build(mix, duration, media_lengths)
                 join += inputs + ['-filter_complex', graph, '-map', '0:v:0', '-map', label]
             join += ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', str(joined)]
             run(join, log)

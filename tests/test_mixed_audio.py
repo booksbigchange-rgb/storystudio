@@ -67,7 +67,8 @@ class Validation(unittest.TestCase):
                {'music': {'file': 'a.wav', 'volume': 3}}, {'music': {'file': 'a.wav', 'volume': float('nan')}},
                {'music': {'file': 'a.wav', 'volume': True}}, {'duck': 'extreme'}, {'surprise': 1}, {'source_volume': -1},
                {'narration': [{'file': 'a.wav', 'start': -1}]}, {'narration': [{'file': 'a.wav', 'start': float('inf')}]},
-               {'sfx': [{'file': 'a.wav'}]*33}, {'narration': [{'file': 'a.wav'}]*17}, {'sfx': 'x'}, [], {'music': 'a.wav'}]
+               {'sfx': [{'file': 'a.wav'}]*33}, {'sfx': [{'file': 'a.wav', 'fade_in': -1}]}, {'sfx': [{'file': 'a.wav', 'fade_out': 31}]},
+               {'music': {'file': 'a.wav', 'fade_in': float('nan')}}, {'narration': [{'file': 'a.wav'}]*17}, {'sfx': 'x'}, [], {'music': 'a.wav'}]
         for settings in bad:
             with self.subTest(settings=settings), self.assertRaises(ValueError):
                 audio.validate_audio(settings)
@@ -167,7 +168,7 @@ class Mix(unittest.TestCase):
 
     def render(self, settings, name):
         settings = audio.validate_audio(settings)
-        inputs, graph, label = audio.build(settings, 10)
+        inputs, graph, label = audio.build(settings, 10, audio.check_media(settings, 10, run, FFMPEG, FFPROBE))
         out = self.folder/(name+'.mp4')
         run([FFMPEG, '-v', 'error', '-nostdin', '-i', str(self.base), *inputs, '-filter_complex', graph,
              '-map', '0:v:0', '-map', label, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', '10', str(out)])
@@ -216,6 +217,25 @@ class Mix(unittest.TestCase):
         peak = max(abs(x) for x in self.render(settings, 'loud'))
         self.assertLess(peak, .99)
 
+    def test_clip_fades_shape_the_edges(self):
+        long_sfx = tone(self.folder/'long.wav', 3000, 3, .5)
+        plain = self.render({'sfx': [{'file': str(long_sfx), 'start': 2}]}, 'nofade')
+        faded = self.render({'sfx': [{'file': str(long_sfx), 'start': 2, 'fade_in': 1, 'fade_out': 1}]}, 'fade')
+        level = lambda audio_, a, b: goertzel(window(audio_, a, b), 3000)
+        self.assertAlmostEqual(level(plain, 2.0, 2.2), level(plain, 3.0, 3.2), delta=.05)          # flat without fades
+        self.assertLess(level(faded, 2.0, 2.2), level(faded, 3.2, 3.8)*.4)                          # starts quiet
+        self.assertGreater(level(faded, 3.2, 3.8), .15)                                             # full in the middle
+        self.assertLess(level(faded, 4.8, 5.0), level(faded, 3.2, 3.8)*.4)                          # ends quiet
+        self.assertAlmostEqual(level(faded, 3.3, 3.7), level(plain, 3.3, 3.7), delta=.05)
+
+    def test_music_fades_are_configurable(self):
+        flat = self.render({'music': {'file': str(self.music), 'volume': .6, 'fade_in': 0, 'fade_out': 0}, 'duck': 'off'}, 'musicflat')
+        slow = self.render({'music': {'file': str(self.music), 'volume': .6, 'fade_in': 3, 'fade_out': 3}, 'duck': 'off'}, 'musicslow')
+        first = lambda a_: goertzel(window(a_, 0.0, .3), 220)
+        self.assertGreater(first(flat), .1)
+        self.assertLess(first(slow), first(flat)*.3)
+        self.assertLess(goertzel(window(slow, 9.7, 10), 220), goertzel(window(flat, 9.7, 10), 220)*.3)
+
     def test_clip_past_end_is_trimmed(self):
         mixed = self.render({'sfx': [{'file': str(self.sfx), 'start': 9.8}]}, 'tail')
         self.assertAlmostEqual(len(mixed)/RATE, 10, delta=.1)
@@ -223,3 +243,23 @@ class Mix(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WaveformPeaks(unittest.TestCase):
+    """The timeline draws the same cached envelope the documentary editor uses."""
+    def test_peaks_follow_the_audio(self):
+        import waveform
+        with tempfile.TemporaryDirectory() as folder:
+            path = tone(Path(folder)/'burst.wav', 440, 1, .5, delay=1)         # silent first second, tone in the second
+            results = []
+            job = waveform.WaveformJob(path, FFMPEG, Path(folder)/'cache', lambda data, error: results.append((data, error)))
+            job.run()
+            data, error = results[0]
+            self.assertIsNone(error)
+            self.assertAlmostEqual(data['duration'], 2, delta=.05)
+            quiet = max(data['peaks'][:int(.9/data['step'])])
+            loud = max(data['peaks'][int(1.1/data['step']):])
+            self.assertLess(quiet, .02)
+            self.assertGreater(loud, .4)
+            job.run()                                                          # second run is served from the cache
+            self.assertEqual(results[1][0]['peaks'], data['peaks'])
