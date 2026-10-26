@@ -94,7 +94,7 @@ class Validation(Base):
                 project.validate(doc)
 
     def test_no_code_is_ever_evaluated(self):
-        source = Path(rig.__file__).read_text()
+        source = Path(rig.__file__).read_text(encoding='utf-8')
         import re
         for word in ('eval(', 'exec(', '__import__', 'pickle', 'subprocess', 'os.system', 'import socket'):
             self.assertNotIn(word, source)
@@ -283,7 +283,9 @@ class Rendering(Base):
         first = self.frame().tobytes()
         shutil_target = self.library/'robo'
         for name in ('body.png',):
-            Image.new('RGBA', Image.open(shutil_target/name).size, (200, 0, 0, 255)).save(shutil_target/name)
+            with Image.open(shutil_target/name) as existing:
+                size = existing.size
+            Image.new('RGBA', size, (200, 0, 0, 255)).save(shutil_target/name)
         os.utime(shutil_target/'rig.json', (time.time()+5, time.time()+5))
         self.assertNotEqual(self.frame().tobytes(), first)
 
