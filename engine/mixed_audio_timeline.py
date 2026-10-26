@@ -114,8 +114,8 @@ class AudioTimeline(tk.Canvas):
             return None
         clip = self.entries[self.dragging][1]
         start = self.time_at(x)-self.grab
-        start = min(max(0, start), max(0, self.total-.1))
-        start = round(start*FPS)/FPS
+        latest = max(0, int((self.total-.1)*FPS))/FPS            # last whole frame that still leaves 0.1 s inside the story
+        start = min(max(0, round(start*FPS)/FPS), latest)
         if start != clip['start']:
             self.on_move(self.dragging, start)
         return start
