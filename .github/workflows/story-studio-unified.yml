@@ -70,6 +70,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys render failed' }
           python tests/cartoon_keys_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys GUI failed' }
+          python tests/native_render_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native character renderer parity failed' }
           python tests/mixed_audio_timeline_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Audio timeline GUI failed' }
           python tests/mixed_edit_integration.py
@@ -99,5 +101,6 @@ jobs:
             exports/edit-acceptance-*/results.json
             exports/edit-gui-*/
             exports/audio-timeline-*/
+            exports/native-render-*/
             exports/mixed-run-*/render.log
           retention-days: 14

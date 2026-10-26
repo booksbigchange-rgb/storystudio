@@ -29,8 +29,8 @@ If your studio uses `D:\StoryStudio`, install and start with the root launchers 
 
 ## Needs
 
-- Windows 10/11 64-bit. Microsoft Edge or Google Chrome already installed (used only to draw character
-  scenes; none is bundled). Everything runs offline.
+- Windows 10/11 64-bit. Everything runs offline. Character export and previews are drawn natively; Microsoft Edge or
+  Google Chrome is only used by *Play live preview* (none is bundled).
 - Self-check: `StoryStudio.exe --self-test --output <new folder>` (writes `results.json`; exit code 0 = pass).
 
 ## Limits and honesty
@@ -38,6 +38,6 @@ If your studio uses `D:\StoryStudio`, install and start with the root launchers 
 - Unsigned program: Windows SmartScreen or antivirus may ask for confirmation.
 - Character animation is a lightweight 2D cutout system (three built-in characters). It is not painterly
   rigging and has no custom-artwork puppets.
-- Long character sections render slowly because each frame is captured from a browser.
+- Character sections render at roughly 30 ms per 720p frame on a modern PC (see docs/native-renderer.md); slower machines take longer.
 - Automated tests ran on a clean GitHub-hosted Windows machine; see `BUILD-REPORT.md`. Test on your own
   computer before relying on it for real work.
