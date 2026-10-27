@@ -127,12 +127,15 @@ with patch('mixed_editor.messagebox.askyesno', return_value=True), patch('studio
     shell.close_all()
     deadline = time.monotonic()+60
     alive = True
+    remaining = []
     while alive and time.monotonic() < deadline:
+        remaining = [(type(h.app).__name__, getattr(h.app, 'closing', None), getattr(h.app, 'busy', None), getattr(h.app, 'dirty', None),
+                      getattr(h.app, 'preview_busy', None)) for h in shell.hosts]
         try:
             root.update(); time.sleep(.05)
         except tk.TclError:
             alive = False
-assert not alive, 'the studio did not close'
+assert not alive, f'the studio did not close: {remaining} {shell.status.get()!r}'
 (folder/'results.json').write_text(json.dumps(dict(status='passed', checks=['one-window and classic launchers start', 'three workspaces as tabs in one process',
     'theme unchanged by the character tab', 'shortcuts act on the visible tab only', 'Edit source and Open project open tabs',
     'mixed and character exports from inside the window', 'close tab asks about unsaved work', 'close window closes every tab']), indent=2))
