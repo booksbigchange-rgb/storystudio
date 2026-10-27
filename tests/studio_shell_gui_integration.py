@@ -133,6 +133,7 @@ with patch('mixed_editor.messagebox.askyesno', return_value=True), patch('studio
                       getattr(h.app, 'preview_busy', None)) for h in shell.hosts]
         try:
             root.update(); time.sleep(.05)
+            root.winfo_exists()          # update() alone does not fail once the window is gone; winfo does
         except tk.TclError:
             alive = False
 assert not alive, f'the studio did not close: {remaining} {shell.status.get()!r} callback errors: {errors}'
