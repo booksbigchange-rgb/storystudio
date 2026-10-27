@@ -15,7 +15,11 @@ export function poseAt(t, action='idle', speed=1) {
     tail: Math.sin(q*4)*.12
   };
 }
-export function drawCharacter(ctx, {kind='fox', expression='happy', action='idle', speed=1, t=0, x=0, y=0, scale=1}) {
+export function drawCharacter(ctx, {kind='fox', expression='happy', action='idle', speed=1, t=0, x=0, y=0, scale=1, tilt=0}) {
+  if(String(kind).startsWith('custom:')){ // layered-art packs are drawn by the native renderer; this live preview shows a stand-in
+    ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.fillStyle='#ffffffb0';ctx.beginPath();ctx.roundRect(-70,-170,140,280,24);ctx.fill();
+    ctx.fillStyle='#243e39';ctx.font='700 16px system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('custom character',0,-20);ctx.fillText('see frame preview',0,4);ctx.restore();return;
+  }
   const p=poseAt(t,action,speed);
   const fur=kind==='fox'?'#e98343':kind==='bear'?'#a97954':'#b5a1d5';
   const dark=kind==='fox'?'#ac542f':kind==='bear'?'#76513e':'#8b78ac';
@@ -24,6 +28,7 @@ export function drawCharacter(ctx, {kind='fox', expression='happy', action='idle
   function path(points,c){ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(...points[0]);points.slice(1).forEach(v=>ctx.lineTo(...v));ctx.closePath();ctx.fill()}
   function rect(x,y,w,h,r,c){ctx.fillStyle=c;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
   ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+  if(tilt){ctx.translate(0,100);ctx.rotate(tilt);ctx.translate(0,-100)}  // pivot at the feet
   ellipse(0,102,80-p.jump*.3,12,'#214e4429');
   ctx.translate(0,p.bob-p.jump);
   if(kind==='fox'){

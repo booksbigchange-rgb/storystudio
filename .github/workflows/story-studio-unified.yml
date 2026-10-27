@@ -1,0 +1,101 @@
+name: StoryStudio unified Windows regressions
+on:
+  push:
+    branches: [feature/unified-story-studio]
+    paths: ['engine/**', 'tests/**', 'integrations/lemo-lite/**', 'packaging/get-ffmpeg.ps1', '.github/workflows/story-studio-unified.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: unified-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-regression:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/cache/pip
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/cache/pycache
+      STORYSTUDIO_TEMP: ${{ github.workspace }}/temp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned dependencies and record provenance
+        run: |
+          New-Item -Force -ItemType Directory exports, artifacts, temp, tools/ffmpeg | Out-Null
+          python -m pip install --index-url https://pypi.org/simple --report artifacts/dependencies.json Pillow==12.3.0 playwright==1.55.0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Verify official FFmpeg archive and install inside workspace
+        run: ./packaging/get-ffmpeg.ps1
+      - name: Existing editor and title unit regressions
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unified unit tests failed' }
+          python -m unittest discover -s integrations/lemo-lite/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Character unit tests failed' }
+      - name: Actual Windows GUI and decoded mixed-engine titles in both formats
+        run: |
+          python tests/mixed_titles_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'GUI and MP4 acceptance failed' }
+          python tests/mixed_cancel_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Real GUI cancellation and retry failed' }
+          python tests/templates_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Documentary template GUI and exports failed' }
+          python tests/layer_keys_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Layer keyframe GUI and decoded motion failed' }
+          python tests/mixed_audio_integration.py --cartoon
+          if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix export failed' }
+          python tests/mixed_audio_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Shared audio mix GUI failed' }
+          python tests/cartoon_keys_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Character animation keys render failed' }
+          python tests/cartoon_keys_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Character animation keys GUI failed' }
+          python tests/studio_shell_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'One-window studio GUI failed' }
+          python tests/character_rig_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Layered character export failed' }
+          python tests/character_rig_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Layered character GUI failed' }
+          python tests/native_render_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native character renderer parity failed' }
+          python tests/mixed_audio_timeline_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Audio timeline GUI failed' }
+          python tests/mixed_edit_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trim, transition and split export failed' }
+          python tests/mixed_edit_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Undo, trim, transition and split GUI failed' }
+          python tests/mixed_endurance_integration.py --sections 40
+          if ($LASTEXITCODE -ne 0) { throw 'Long-story export endurance failed' }
+          python tests/mixed_long_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'Long-story GUI management failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unified-titles-windows-evidence
+          path: |
+            artifacts/
+            exports/titles-acceptance-*/
+            exports/mixed-cancel-*/
+            exports/templates-acceptance-*/
+            exports/layer-keys-acceptance-*/
+            exports/audio-acceptance-*/
+            exports/audio-gui-*/
+            exports/endurance-*/results.json
+            exports/cartoon-keys-*/
+            exports/cartoon-keys-gui-*/
+            exports/long-gui-*/
+            exports/edit-acceptance-*/results.json
+            exports/edit-gui-*/
+            exports/audio-timeline-*/
+            exports/native-render-*/
+            exports/rig-acceptance-*/results.json
+            exports/rig-gui-*/
+            exports/shell-gui-*/
+            exports/mixed-run-*/render.log
+          retention-days: 14

@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import traceback
 import renderer
-import project
+import cartoon_project as project
 
 APP_DIR=renderer.ROOT
 
@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--gui-test',action='store_true')
     parser.add_argument('--output')
     parser.add_argument('--project')
+    parser.add_argument('--open', help='Open this saved project in the editor')
     parser.add_argument('--audio')
     parser.add_argument('--duration',type=float,default=2)
     parser.add_argument('--fps',type=int,default=12)
@@ -54,7 +55,11 @@ def main():
             log.write_text('PASS: '+args.output+'\n',encoding='utf-8')
         else:
             from studio_ui import StudioApp
-            StudioApp().mainloop()
+            app=StudioApp()
+            if args.open:
+                doc=project.load(args.open)
+                app.document=doc;app.project_path=Path(args.open);app.refresh();app.title('StoryStudio 2.0 · '+doc['name'])
+            app.mainloop()
         return 0
     except Exception:
         log.write_text(traceback.format_exc(),encoding='utf-8')

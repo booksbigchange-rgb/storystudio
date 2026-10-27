@@ -14,6 +14,24 @@ export function sceneAt(t, scenes){
     start+=scenes[i].duration;
   }
 }
+// Mirrors project.key_values: numeric tracks ease between keys, expression/action switch at a key.
+const KEY_NUMBERS=['x','size','lift','tilt'], KEY_CHOICES=['expression','action'];
+export function keyValues(scene, fraction){
+  const keys=scene.keys||[], f=clamp(fraction,0,1);
+  const out={x:scene.x,size:scene.size,lift:0,tilt:0,expression:scene.expression,action:scene.action};
+  for(const name of KEY_NUMBERS){
+    const track=keys.filter(k=>name in k).map(k=>[k.at,k[name]]);
+    if(!track.length)continue;
+    if(f<=track[0][0])out[name]=track[0][1];
+    else if(f>=track[track.length-1][0])out[name]=track[track.length-1][1];
+    else for(let i=0;i<track.length-1;i++){
+      const [a,va]=track[i],[b,vb]=track[i+1];
+      if(a<=f&&f<=b){const u=(f-a)/(b-a);out[name]=va+(vb-va)*u*u*(3-2*u);break}
+    }
+  }
+  for(const name of KEY_CHOICES)for(const k of keys)if(name in k&&k.at<=f)out[name]=k[name];
+  return out;
+}
 function caption(text,W,H,portrait){
   const font=portrait?32:38, maxWidth=W*.82;
   ctx.font=`700 ${font}px system-ui,sans-serif`;
@@ -33,21 +51,22 @@ function picture(scene,t,W,H){
   ellipse(W*.24,H*.85,W*.75,H*.37,colors[2]);ellipse(W*.9,H*.94,W*.8,H*.43,colors[3]);
   for(let i=0;i<22;i++){const x=hash(i+1)*W,y=H*(.7+hash(i+30)*.3);ellipse(x,y,4,7,'#fff0b7')}
   const phase=t/scene.duration*10;
-  const baseX=portrait?W*(.29+scene.x*.45):W*scene.x;
-  const arrival=scene.action==='story'?ss(seg(phase,.3,2.1)):1;
+  const k=keyValues(scene,t/scene.duration), action=k.action;
+  const baseX=portrait?W*(.29+k.x*.45):W*k.x;
+  const arrival=action==='story'?ss(seg(phase,.3,2.1)):1;
   const x=lerp(-150,baseX,arrival);
-  const walk=scene.action==='walk'?Math.sin(t*.7*scene.speed)*(portrait?45:110):0;
-  const scale=(portrait?1.05:1.0)*scene.size;
-  const y=portrait?H*.64:H*.63;
-  const jump=scene.action==='story' && phase>5.15 && phase<6.85?Math.sin(Math.PI*seg(phase,5.15,6.85))*80:0;
-  drawCharacter(ctx,{kind:scene.character,expression:scene.expression,action:scene.action,speed:scene.speed,t,x:x+walk,y:y-jump,scale});
+  const walk=action==='walk'?Math.sin(t*.7*scene.speed)*(portrait?45:110):0;
+  const scale=(portrait?1.05:1.0)*k.size;
+  const y=(portrait?H*.64:H*.63)-k.lift;
+  const jump=action==='story' && phase>5.15 && phase<6.85?Math.sin(Math.PI*seg(phase,5.15,6.85))*80:0;
+  drawCharacter(ctx,{kind:scene.character,expression:k.expression,action,speed:scene.speed,t,x:x+walk,y:y-jump,scale,tilt:k.tilt});
   const sx=portrait?W*.76:lerp(W*.82,W*.64,ss(seg(phase,2.8,5.4)));
   const sy=(portrait?H*.29:H*.33)+Math.sin(t*3)*14;
   ellipse(sx,sy,65,65,'#fff4bb42');star(sx,sy,48,'#ffe16c');star(sx,sy-2,36,'#fff3a0');
   ellipse(sx-10,sy-4,3,5,'#735f45');ellipse(sx+10,sy-4,3,5,'#735f45');
-  if(scene.title && (scene.action!=='story'||phase>=7))caption(scene.title,W,H,portrait);
+  if(scene.title && (action!=='story'||phase>=7))caption(scene.title,W,H,portrait);
   // Exposed geometry is useful for automated framing checks; no random animation state.
-  window.frameInfo={character:scene.character,x:x+walk,y:y-jump,scale,portrait,scene:window.activeScene};
+  window.frameInfo={character:scene.character,x:x+walk,y:y-jump,scale,portrait,scene:window.activeScene,keys:k};
 }
 function render(t){
   t=clamp(t,0,window.DUR);

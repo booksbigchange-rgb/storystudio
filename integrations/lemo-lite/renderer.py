@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 from contextlib import contextmanager
 from fractions import Fraction
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -18,11 +19,19 @@ import threading
 import uuid
 import wave
 
-import project
+import cartoon_project as project
+import character_rig
 
 BASE = Path(__file__).resolve().parent
 FROZEN = bool(getattr(sys, 'frozen', False))
-ROOT = Path(sys.executable).resolve().parent if FROZEN else BASE.parents[1]
+def _frozen_root():
+    # The unified portable build keeps this program in a "character" subfolder of the shared top folder.
+    if os.getenv('STORYSTUDIO_HOME'):
+        return Path(os.environ['STORYSTUDIO_HOME']).resolve()
+    return Path(sys.executable).resolve().parent
+
+
+ROOT = _frozen_root() if FROZEN else BASE.parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 BROWSER_LOCK = threading.Lock()
 
@@ -118,7 +127,10 @@ def local_server(document=None):
 
 @contextmanager
 def scene_page(document, width, height):
-    from playwright.sync_api import sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError('The browser renderer is not installed (the portable build uses the native renderer).') from None
     with BROWSER_LOCK, local_server(document) as url, sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=find_chrome(), headless=True,
                                     args=['--disable-gpu'])
@@ -133,9 +145,20 @@ def scene_page(document, width, height):
             browser.close()
 
 
+def render_engine(args=None):
+    """'native' (Pillow, no browser) unless 'browser' is requested by argument or STORYSTUDIO_RENDERER."""
+    choice = (getattr(args, 'engine', None) or os.getenv('STORYSTUDIO_RENDERER') or 'native').lower()
+    if choice not in ('native', 'browser'):
+        raise ValueError('Renderer must be native or browser')
+    return choice
+
+
 def preview_frame(document, seconds=0):
     width, height, _ = project.dimensions(document)
     scale = min(640/width, 400/height)
+    if render_engine() == 'native':
+        import native_scene
+        return native_scene.preview_png(document, seconds, round(width*scale), round(height*scale))
     with scene_page(document, round(width*scale), round(height*scale)) as (page, errors):
         page.evaluate('(t) => window.render(t)', seconds)
         if errors:
@@ -179,6 +202,11 @@ def export(args, progress=None, cancel=None):
     document = project.validate(getattr(args, 'document', None) or
                                 (project.load(args.project) if getattr(args, 'project', None) else project.new_project()))
     validate_args(args, document)
+    if render_engine(args) == 'native':
+        import native_scene
+        native_scene.require_packs(document)      # missing layered-art packs fail now, before any frame
+    elif any(character_rig.custom_name(s['character']) for s in document['scenes']):
+        raise ValueError('Layered-art characters need the native renderer (the browser renderer only draws the built-in characters)')
     cancelled = cancel or threading.Event()
     def check_cancel():
         if cancelled.is_set():
@@ -208,12 +236,23 @@ def export(args, progress=None, cancel=None):
                 raise FileNotFoundError(f'Audio not found: {audio}')
             if not audio_path:
                 chime_wav(audio, actual_duration)
-            with scene_page(document, args.width, args.height) as (page, errors):
-                ffargs = [ffmpeg, '-hide_banner', '-loglevel', 'error', '-y',
-                          '-f', 'image2pipe', '-framerate', str(args.fps), '-vcodec', 'mjpeg', '-i', 'pipe:0',
+            native = render_engine(args) == 'native'
+            if native:
+                import native_scene
+                frames_source = native_scene.NativeScene(document, args.width, args.height)
+                page_context = contextlib.nullcontext((None, []))
+                # Raw RGB frames: no JPEG pass, no browser, bounded memory (one frame at a time).
+                input_args = ['-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{args.width}x{args.height}', '-framerate', str(args.fps), '-i', 'pipe:0']
+                scaler = 'scale=out_range=tv:out_color_matrix=bt709,format=yuv420p'
+            else:
+                page_context = scene_page(document, args.width, args.height)
+                input_args = ['-f', 'image2pipe', '-framerate', str(args.fps), '-vcodec', 'mjpeg', '-i', 'pipe:0']
+                scaler = 'scale=in_range=pc:out_range=tv,format=yuv420p'
+            with page_context as (page, errors):
+                ffargs = [ffmpeg, '-hide_banner', '-loglevel', 'error', '-y', *input_args,
                           '-i', str(audio), '-map', '0:v:0', '-map', '1:a:0', '-af', 'apad',
                           '-c:v', 'libx264', '-threads', '2', '-preset', 'veryfast', '-crf', '22',
-                          '-vf', 'scale=in_range=pc:out_range=tv,format=yuv420p',
+                          '-vf', scaler,
                           '-pix_fmt', 'yuv420p', '-color_range', 'tv',
                           '-c:a', 'aac', '-b:a', '128k', '-t', str(actual_duration),
                           '-movflags', '+faststart', str(pending)]
@@ -224,10 +263,13 @@ def export(args, progress=None, cancel=None):
                     try:
                         for i in range(frame_count):
                             check_cancel()
-                            page.evaluate('(t) => window.render(t)', i/args.fps)
-                            if errors:
-                                raise RuntimeError('Scene JavaScript error: '+errors[-1])
-                            proc.stdin.write(page.screenshot(type='jpeg', quality=90, animations='disabled'))
+                            if native:
+                                proc.stdin.write(frames_source.frame(i/args.fps).tobytes())
+                            else:
+                                page.evaluate('(t) => window.render(t)', i/args.fps)
+                                if errors:
+                                    raise RuntimeError('Scene JavaScript error: '+errors[-1])
+                                proc.stdin.write(page.screenshot(type='jpeg', quality=90, animations='disabled'))
                             if progress:
                                 progress((i+1)/frame_count*.9, f'Rendering frame {i+1} / {frame_count}')
                         proc.stdin.close()
@@ -302,6 +344,7 @@ def main():
     p.add_argument('--height', type=int, default=720)
     p.add_argument('--audio')
     p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--engine', choices=['native', 'browser'], help='native (default, no browser) or browser (Chrome/Edge)')
     try:
         export(p.parse_args())
     except Exception as exc:
