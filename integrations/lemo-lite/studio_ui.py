@@ -31,18 +31,22 @@ GREEN = '#26776a'
 WHITE = '#ffffff'
 
 
-class StudioApp(tk.Tk):
-    def __init__(self, workspace=None, auto_preview=True):
-        if os.name == 'nt':
+class StudioCore:
+    """The character editor. StudioApp runs it as its own window; the unified studio hosts it in a tab."""
+    embedded = False  # True when hosted inside another window: leave that window's theme and DPI alone
+
+    def __init__(self, workspace=None, auto_preview=True, **window):
+        if os.name == 'nt' and not self.embedded:
             # Match Tk/window/screenshot coordinates on scaled Windows displays.
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        super().__init__()
+        super().__init__(**window)
         self.workspace = Path(workspace or renderer.ROOT)
         self.title('StoryStudio 2.0 · My cartoon')
         self.geometry('1180x780')
         self.minsize(1000, 680)
-        self.configure(bg=BG)
+        if not self.embedded:
+            self.configure(bg=BG)
         self.document = project.new_project()
         self.project_path = None
         self.dirty = False
@@ -82,19 +86,21 @@ class StudioApp(tk.Tk):
 
     def _build(self):
         style = ttk.Style(self)
-        style.theme_use('clam')
-        style.configure('.', font=('Segoe UI', 10), foreground=INK, background=BG)
-        style.configure('TButton', padding=(9,6), background='#dfe9e2', borderwidth=0)
-        style.map('TButton', background=[('active','#cbded3')])
+        if not self.embedded:  # a hosted tab keeps the studio's shared theme
+            style.theme_use('clam')
+            style.configure('.', font=('Segoe UI', 10), foreground=INK, background=BG)
+            style.configure('TButton', padding=(9,6), background='#dfe9e2', borderwidth=0)
+            style.map('TButton', background=[('active','#cbded3')])
         style.configure('Small.TButton', padding=(3,6), font=('Segoe UI',9))
         style.configure('Accent.TButton', background=GREEN, foreground=WHITE, font=('Segoe UI',10,'bold'))
         style.map('Accent.TButton', background=[('active','#1d6055'),('disabled','#9ab6aa')])
-        style.configure('TEntry', fieldbackground=WHITE, padding=5)
-        style.configure('TCombobox', fieldbackground=WHITE, padding=5)
-        style.map('TCombobox', fieldbackground=[('readonly',WHITE)], foreground=[('readonly',INK)])
-        style.configure('TNotebook', tabmargins=0)
-        style.configure('TNotebook.Tab', padding=(7,7))
-        style.configure('Horizontal.TProgressbar', background=GREEN, troughcolor='#dce7df')
+        if not self.embedded:
+            style.configure('TEntry', fieldbackground=WHITE, padding=5)
+            style.configure('TCombobox', fieldbackground=WHITE, padding=5)
+            style.map('TCombobox', fieldbackground=[('readonly',WHITE)], foreground=[('readonly',INK)])
+            style.configure('TNotebook', tabmargins=0)
+            style.configure('TNotebook.Tab', padding=(7,7))
+            style.configure('Horizontal.TProgressbar', background=GREEN, troughcolor='#dce7df')
         header=ttk.Frame(self,padding=(20,14))
         header.pack(fill='x')
         ttk.Label(header,text='STORYSTUDIO  2.0',font=('Segoe UI',18,'bold'),foreground=GREEN).pack(side='left')
@@ -612,3 +618,8 @@ class StudioApp(tk.Tk):
         if not self.confirm_discard():return
         self.closing=True;self.preview_pending=False;self.cancel_event.set()
         self.status.set('Closing browser and export workers…')
+
+
+class StudioApp(StudioCore, tk.Tk):
+    """The character editor in its own window (portable app, tests and the classic launcher)."""
+

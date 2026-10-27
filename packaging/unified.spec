@@ -10,7 +10,7 @@ lemo = os.path.join(root, 'integrations', 'lemo-lite')
 datas = [(os.path.join(lemo, 'scene'), 'scene'), (os.path.join(lemo, 'vendor'), 'vendor')]   # served to the optional live preview
 
 app = Analysis([os.path.join(engine, 'unified_app.py')], pathex=[engine, lemo], datas=datas,
-               hiddenimports=['frozen_selftest', 'mixed_audio_editor', 'mixed_titles_editor', 'mixed_section_editor', 'template_editor',
+               hiddenimports=['frozen_selftest', 'studio_shell', 'mixed_audio_editor', 'mixed_titles_editor', 'mixed_section_editor', 'template_editor',
                               'studio_ui', 'gui_regression', 'presets', 'native_scene', 'cartoon_project', 'renderer'],
                excludes=['playwright'])
 worker = Analysis([os.path.join(engine, 'worker_entry.py')], pathex=[engine, lemo],

@@ -98,6 +98,7 @@ def main():
     parser.add_argument('--editor', choices=('documentary', 'cartoon', 'mixed'))
     parser.add_argument('--project')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--classic', action='store_true', help='the earlier chooser that opens each editor in its own window')
     args = parser.parse_args()
     if args.editor:
         try:
@@ -110,6 +111,10 @@ def main():
         return
     if args.project:
         subprocess.Popen(command(project_kind(args.project), args.project), cwd=ROOT)
+        return
+    if not args.classic:
+        import studio_shell
+        studio_shell.main(args.smoke)
         return
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox

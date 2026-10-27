@@ -238,7 +238,14 @@ class MixedEditor:
         index = self.selected()
         if index is not None:
             section = self.doc['sections'][index]
-            subprocess.Popen(command(section['engine'], section['project']), cwd=ROOT)
+            opener = getattr(self.root, 'open_editor', None)
+            if opener:                       # inside the one-window studio: open the source as a tab
+                try:
+                    opener(section['engine'], section['project'])
+                except (ValueError, OSError) as exc:
+                    messagebox.showerror('Cannot open source', str(exc), parent=self.root)
+            else:
+                subprocess.Popen(command(section['engine'], section['project']), cwd=ROOT)
 
     def change_format(self, _=None):
         self.checkpoint()

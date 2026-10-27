@@ -5,7 +5,7 @@ One folder, no Python install. Delete the folder to remove it; nothing is writte
 
 ## Start
 
-Double-click `StoryStudio.exe`. Choose a workspace:
+Double-click `StoryStudio.exe`. One window opens; each workspace you choose opens as a tab in it:
 
 - **Documentary templates / Dark documentary** – artwork, camera, layers, audio and timed text.
 - **Shared timeline** – combine documentary and character projects (up to 200 sections / 60 minutes),

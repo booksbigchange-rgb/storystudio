@@ -70,6 +70,26 @@ def checks(folder):
     for kind in ('documentary', 'mixed'):
         studio_hub.run_editor(kind, None, smoke=True)
     done.append('documentary and shared-timeline editors open')
+    # The one-window studio hosts all three workspaces as tabs of this process.
+    import studio_shell
+    shell_root = tk.Tk()
+    shell = studio_shell.StudioShell(shell_root)
+    for kind in ('mixed', 'documentary', 'cartoon'):
+        shell.open(kind)
+    shell_root.update()
+    assert len(shell.hosts) == 3 and len(shell.notebook.tabs()) == 4
+    shell.open('cartoon', str(cartoon)); shell_root.update()
+    assert shell.current().document['name'] == 'Self test'
+    for host in list(shell.hosts):
+        if hasattr(host.app, 'dirty'):
+            host.app.dirty = False
+        host.close_request()
+    deadline = time.monotonic()+60
+    while shell.hosts and time.monotonic() < deadline:
+        shell_root.update(); time.sleep(.05)
+    assert not shell.hosts, 'tabs did not close'
+    shell_root.destroy()
+    done.append('one-window studio opens every workspace as a tab and closes them')
     errors = []
     patch('mixed_editor.messagebox.showerror', side_effect=lambda title, text, **kw: errors.append(text)).start()
     root = tk.Tk()

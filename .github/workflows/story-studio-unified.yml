@@ -56,6 +56,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys render failed' }
           python tests/cartoon_keys_gui_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Character animation keys GUI failed' }
+          python tests/studio_shell_gui_integration.py
+          if ($LASTEXITCODE -ne 0) { throw 'One-window studio GUI failed' }
           python tests/character_rig_integration.py
           if ($LASTEXITCODE -ne 0) { throw 'Layered character export failed' }
           python tests/character_rig_gui_integration.py
@@ -94,5 +96,6 @@ jobs:
             exports/native-render-*/
             exports/rig-acceptance-*/results.json
             exports/rig-gui-*/
+            exports/shell-gui-*/
             exports/mixed-run-*/render.log
           retention-days: 14
