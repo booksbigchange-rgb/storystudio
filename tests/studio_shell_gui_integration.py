@@ -135,7 +135,7 @@ with patch('mixed_editor.messagebox.askyesno', return_value=True), patch('studio
             root.update(); time.sleep(.05)
         except tk.TclError:
             alive = False
-assert not alive, f'the studio did not close: {remaining} {shell.status.get()!r}'
+assert not alive, f'the studio did not close: {remaining} {shell.status.get()!r} callback errors: {errors}'
 (folder/'results.json').write_text(json.dumps(dict(status='passed', checks=['one-window and classic launchers start', 'three workspaces as tabs in one process',
     'theme unchanged by the character tab', 'shortcuts act on the visible tab only', 'Edit source and Open project open tabs',
     'mixed and character exports from inside the window', 'close tab asks about unsaved work', 'close window closes every tab']), indent=2))

@@ -188,10 +188,12 @@ class StudioShell:
         self._finish_close(0)
 
     def _finish_close(self, waited):
-        waiting = [h for h in self.hosts if getattr(h.app, 'closing', False)]
+        self.hosts = [h for h in self.hosts if h.winfo_exists()]
         if not self.hosts:
             self.root.destroy()
-        elif waiting and len(waiting) == len(self.hosts) and waited < 150:
+            return
+        waiting = [h for h in self.hosts if getattr(h.app, 'closing', False)]
+        if waiting and len(waiting) == len(self.hosts) and waited < 300:
             self.root.after(100, lambda: self._finish_close(waited+1))    # character tabs stop their workers first
         else:
             self.status.set('Some tabs are still open (unsaved work kept or an export is running).')
